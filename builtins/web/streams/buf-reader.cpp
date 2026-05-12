@@ -11,8 +11,6 @@ constexpr size_t CHUNK_SIZE = 8192;
 
 } // namespace
 
-
-
 namespace builtins::web::streams {
 
 class StreamTask final : public api::AsyncTask {
@@ -82,7 +80,9 @@ public:
     return true;
   }
 
-  void trace(JSTracer *trc) override { TraceEdge(trc, &reader_, "Reader for BufReader StreamTask"); }
+  void trace(JSTracer *trc) override {
+    TraceEdge(trc, &reader_, "Reader for BufReader StreamTask");
+  }
 };
 
 const JSFunctionSpec BufReader::static_methods[] = {JS_FS_END};
@@ -90,12 +90,14 @@ const JSPropertySpec BufReader::static_properties[] = {JS_PS_END};
 const JSFunctionSpec BufReader::methods[] = {JS_FS_END};
 const JSPropertySpec BufReader::properties[] = {JS_PS_END};
 
-bool cancel(JSContext *cx, JS::CallArgs args, HandleObject stream, HandleObject owner, HandleValue reason) {
+bool cancel(JSContext *cx, JS::CallArgs args, HandleObject stream, HandleObject owner,
+            HandleValue reason) {
   args.rval().setUndefined();
   return true;
 }
 
-bool pull(JSContext *cx, JS::CallArgs args, HandleObject source, HandleObject owner, HandleObject controller) {
+bool pull(JSContext *cx, JS::CallArgs args, HandleObject source, HandleObject owner,
+          HandleObject controller) {
   api::Engine::get(cx)->queue_async_task(js_new<StreamTask>(owner));
   args.rval().setUndefined();
   return true;
@@ -111,7 +113,7 @@ JSObject *BufReader::stream(JSObject *self) {
   return &JS::GetReservedSlot(self, Slots::Stream).toObject();
 }
 
-BufReader::ReadFn* BufReader::read_fn(JSObject *self) {
+BufReader::ReadFn *BufReader::read_fn(JSObject *self) {
   MOZ_ASSERT(is_instance(self));
   return reinterpret_cast<ReadFn *>(JS::GetReservedSlot(self, Slots::Read).toPrivate());
 }
@@ -123,12 +125,13 @@ size_t BufReader::position(JSObject *self) {
 
 void BufReader::set_position(JSObject *self, size_t pos) {
   MOZ_ASSERT(is_instance(self));
-  // NOLINTNEXTLINE(performance-no-int-to-ptr): we use a private slot to store the position, not a pointer.
+  // NOLINTNEXTLINE(performance-no-int-to-ptr): we use a private slot to store the position, not a
+  // pointer.
   JS::SetReservedSlot(self, Slots::Position, JS::PrivateValue(reinterpret_cast<void *>(pos)));
 }
 
 JSObject *BufReader::create(JSContext *cx, JS::HandleObject user, BufReader::ReadFn *read) {
-  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -148,5 +151,3 @@ JSObject *BufReader::create(JSContext *cx, JS::HandleObject user, BufReader::Rea
 }
 
 } // namespace builtins::web::streams
-
-

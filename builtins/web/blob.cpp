@@ -1,16 +1,16 @@
 #include "blob.h"
-#include "file.h"
 #include "builtin.h"
 #include "encode.h"
+#include "file.h"
 #include "rust-encoding.h"
 #include "streams/buf-reader.h"
 #include "streams/native-stream-source.h"
 
-#include "js/UniquePtr.h"
 #include "js/ArrayBuffer.h"
 #include "js/Conversions.h"
 #include "js/experimental/TypedData.h"
 #include "js/TypeDecls.h"
+#include "js/UniquePtr.h"
 #include "js/Value.h"
 
 namespace {
@@ -26,7 +26,8 @@ template <typename T> bool validate_type(T *chars, size_t strlen) {
   return true;
 }
 
-// 1. If type contains any characters outside the range U+0020 to U+007E, then set t to the empty string.
+// 1. If type contains any characters outside the range U+0020 to U+007E, then set t to the empty
+// string.
 // 2. Convert every character in type to ASCII lowercase.
 JSString *normalize_type(JSContext *cx, HandleValue value) {
   JS::RootedString value_str(cx);
@@ -122,25 +123,23 @@ std::string convert_line_endings_to_native(std::string_view s) {
 
 } // anonymous namespace
 
-
-
 namespace builtins::web::blob {
 
 using js::Vector;
 using streams::BufReader;
 using streams::NativeStreamSource;
 
-#define DEFINE_BLOB_METHOD(name)                               \
-bool Blob::name(JSContext *cx, unsigned argc, JS::Value *vp) { \
-  METHOD_HEADER(0)                                             \
-  return name(cx, self, args.rval());                          \
-}
+#define DEFINE_BLOB_METHOD(name)                                                                   \
+  bool Blob::name(JSContext *cx, unsigned argc, JS::Value *vp) {                                   \
+    METHOD_HEADER(0)                                                                               \
+    return name(cx, self, args.rval());                                                            \
+  }
 
-#define DEFINE_BLOB_METHOD_W_ARGS(name)                        \
-bool Blob::name(JSContext *cx, unsigned argc, JS::Value *vp) { \
-  METHOD_HEADER(0)                                             \
-  return name(cx, self, args, args.rval());                    \
-}
+#define DEFINE_BLOB_METHOD_W_ARGS(name)                                                            \
+  bool Blob::name(JSContext *cx, unsigned argc, JS::Value *vp) {                                   \
+    METHOD_HEADER(0)                                                                               \
+    return name(cx, self, args, args.rval());                                                      \
+  }
 
 const JSFunctionSpec Blob::static_methods[] = {
     JS_FS_END,
@@ -190,8 +189,8 @@ JSObject *Blob::data_to_owned_array_buffer(JSContext *cx, HandleObject self) {
   return array_buffer;
 }
 
-bool Blob::read_blob_slice(JSContext *cx, HandleObject self, std::span<uint8_t> buf,
-                           size_t start, size_t *read, bool *done) {
+bool Blob::read_blob_slice(JSContext *cx, HandleObject self, std::span<uint8_t> buf, size_t start,
+                           size_t *read, bool *done) {
   auto *src = Blob::blob(self);
 
   if (start >= src->length()) {
@@ -206,7 +205,7 @@ bool Blob::read_blob_slice(JSContext *cx, HandleObject self, std::span<uint8_t> 
   std::copy_n(src->begin() + start, to_read, buf.data());
   *read = to_read;
 
- return true;
+  return true;
 }
 
 DEFINE_BLOB_METHOD(arrayBuffer)
@@ -333,9 +332,9 @@ bool Blob::text(JSContext *cx, HandleObject self, MutableHandleValue rval) {
 
   auto *src = Blob::blob(self);
 
-  const char* utf8_label = "UTF-8";
-  const auto *encoding =
-      jsencoding::encoding_for_label_no_replacement(reinterpret_cast<const uint8_t *>(utf8_label), 5);
+  const char *utf8_label = "UTF-8";
+  const auto *encoding = jsencoding::encoding_for_label_no_replacement(
+      reinterpret_cast<const uint8_t *>(utf8_label), 5);
 
   auto deleter = [&](jsencoding::Decoder *dec) { jsencoding::decoder_free(dec); };
   std::unique_ptr<jsencoding::Decoder, decltype(deleter)> decoder(
@@ -373,7 +372,7 @@ bool Blob::text(JSContext *cx, HandleObject self, MutableHandleValue rval) {
 bool Blob::size_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "size get", "Blob");
   }
 
@@ -385,7 +384,7 @@ bool Blob::size_get(JSContext *cx, unsigned argc, JS::Value *vp) {
 bool Blob::type_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "type get", "Blob");
   }
 
@@ -403,9 +402,7 @@ Blob::ByteBuffer *Blob::blob(JSObject *self) {
   return blob;
 }
 
-size_t Blob::blob_size(JSObject *self) {
-  return blob(self)->length();
-}
+size_t Blob::blob_size(JSObject *self) { return blob(self)->length(); }
 
 JSString *Blob::type(JSObject *self) {
   MOZ_ASSERT(is_instance(self));
@@ -494,14 +491,16 @@ bool Blob::init_blob_parts(JSContext *cx, HandleObject self, HandleValue value) 
     return true;
   }
   // non-objects are not allowed for the blobParts
-  return api::throw_error(cx, api::Errors::TypeError, "Blob.constructor", "blobParts", "be an object");
+  return api::throw_error(cx, api::Errors::TypeError, "Blob.constructor", "blobParts",
+                          "be an object");
 }
 
 bool Blob::init_options(JSContext *cx, HandleObject self, HandleValue initv) {
   JS::RootedValue init_val(cx, initv);
 
   if (!init_val.isObject()) {
-    return api::throw_error(cx, api::Errors::TypeError, "Blob.constructor", "options", "be an object");
+    return api::throw_error(cx, api::Errors::TypeError, "Blob.constructor", "options",
+                            "be an object");
   }
 
   // `options` is an object which may specify any of the properties:
@@ -558,7 +557,7 @@ bool Blob::init_options(JSContext *cx, HandleObject self, HandleValue initv) {
 }
 
 JSObject *Blob::create(JSContext *cx, UniqueChars data, size_t data_len, HandleString type) {
-  JSObject *self = JS_NewObjectWithGivenProto(cx, &class_, proto_obj);
+  JSObject *self = JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx));
   if (!self) {
     return nullptr;
   }
@@ -576,7 +575,8 @@ JSObject *Blob::create(JSContext *cx, UniqueChars data, size_t data_len, HandleS
 
   SetReservedSlot(self, static_cast<uint32_t>(Slots::Data), JS::PrivateValue(blob.release()));
   SetReservedSlot(self, static_cast<uint32_t>(Slots::Type), JS::StringValue(type));
-  SetReservedSlot(self, static_cast<uint32_t>(Slots::Endings), JS::Int32Value(LineEndings::Transparent));
+  SetReservedSlot(self, static_cast<uint32_t>(Slots::Endings),
+                  JS::Int32Value(LineEndings::Transparent));
   return self;
 }
 
@@ -588,12 +588,14 @@ bool Blob::init(JSContext *cx, HandleObject self, HandleValue blobParts, HandleV
   }
 
   SetReservedSlot(self, static_cast<uint32_t>(Slots::Type), JS_GetEmptyStringValue(cx));
-  SetReservedSlot(self, static_cast<uint32_t>(Slots::Endings), JS::Int32Value(LineEndings::Transparent));
+  SetReservedSlot(self, static_cast<uint32_t>(Slots::Endings),
+                  JS::Int32Value(LineEndings::Transparent));
   SetReservedSlot(self, static_cast<uint32_t>(Slots::Data), JS::PrivateValue(blob.release()));
 
   // Walk the blob parts and append them to the blob's buffer.
   if (blobParts.isNull()) {
-    return api::throw_error(cx, api::Errors::TypeError, "Blob.constructor", "blobParts", "be an object");
+    return api::throw_error(cx, api::Errors::TypeError, "Blob.constructor", "blobParts",
+                            "be an object");
   }
 
   if (!blobParts.isUndefined() && !init_blob_parts(cx, self, blobParts)) {
@@ -638,10 +640,6 @@ void Blob::finalize(JS::GCContext *gcx, JSObject *self) {
   }
 }
 
-bool install(api::Engine *engine) {
-  return Blob::init_class(engine->cx(), engine->global());
-}
+bool install(api::Engine *engine) { return Blob::init_class(engine->cx(), engine->global()); }
 
 } // namespace builtins::web::blob
-
-

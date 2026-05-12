@@ -5,8 +5,6 @@
 #include "headers.h"
 #include "host_api.h"
 
-
-
 namespace builtins::web::fetch {
 
 namespace request_response {
@@ -242,8 +240,7 @@ class ResponseFutureTask final : public api::AsyncTask {
   host_api::FutureHttpIncomingResponse *future_;
 
 public:
-  explicit ResponseFutureTask(HandleObject request,
-                              host_api::FutureHttpIncomingResponse *future);
+  explicit ResponseFutureTask(HandleObject request, host_api::FutureHttpIncomingResponse *future);
 
   [[nodiscard]] bool run(api::Engine *engine) override;
   [[nodiscard]] bool cancel(api::Engine *engine) override;
@@ -253,7 +250,5 @@ public:
 };
 
 } // namespace builtins::web::fetch
-
-
 
 #endif

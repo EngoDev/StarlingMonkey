@@ -27,12 +27,14 @@ mozilla::Result<MimeType, InvalidMimeType> extract_mime_type(std::string_view qu
 //
 // @return An optional tuple `(start, end)` representing the byte range. Returns
 //         `std::nullopt` if the range is invalid or cannot be parsed.
-std::optional<std::tuple<size_t, size_t>> extract_range(std::string_view range_query, size_t full_len);
+std::optional<std::tuple<size_t, size_t>> extract_range(std::string_view range_query,
+                                                        size_t full_len);
 
 // https://fetch.spec.whatwg.org/#abort-fetch
 //
 // Aborts a fetch request and its associated response, if any.
-bool abort_fetch(JSContext *cx, HandleObject promise, HandleObject request, HandleObject response, HandleValue error);
+bool abort_fetch(JSContext *cx, HandleObject promise, HandleObject request, HandleObject response,
+                 HandleValue error);
 
 } // namespace builtins::web::fetch
 

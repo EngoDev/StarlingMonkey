@@ -11,21 +11,21 @@ using builtins::web::worker_location::WorkerLocation;
 static bool baseURL_set(JSContext *cx, unsigned argc, JS::Value *vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   if (args.get(0).isNullOrUndefined()) {
-    WorkerLocation::url.set(nullptr);
+    WorkerLocation::url.rooted(cx).set(nullptr);
   } else if (!builtins::web::url::URL::is_instance(args.get(0))) {
     return api::throw_error(cx, api::Errors::TypeError, "baseURL setter", "value",
-      "be a URL object, null, or undefined");
+                            "be a URL object, null, or undefined");
+  } else {
+    WorkerLocation::url.rooted(cx).set(&args.get(0).toObject());
   }
 
-  WorkerLocation::url.set(&args.get(0).toObject());
-
-  args.rval().setObjectOrNull(WorkerLocation::url.get());
+  args.rval().setObjectOrNull(WorkerLocation::url.rooted(cx).get());
   return true;
 }
 
 static bool baseURL_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setObjectOrNull(WorkerLocation::url.get());
+  args.rval().setObjectOrNull(WorkerLocation::url.rooted(cx).get());
   return true;
 }
 
@@ -48,14 +48,12 @@ static bool evalScript(JSContext *cx, unsigned argc, JS::Value *vp) {
   return Evaluate(cx, options, source, args.rval());
 }
 
-
 const JSPropertySpec properties[] = {
-  JS_PSGS("wpt_baseURL", baseURL_get, baseURL_set, JSPROP_ENUMERATE),
-JS_PS_END};
+    JS_PSGS("wpt_baseURL", baseURL_get, baseURL_set, JSPROP_ENUMERATE), JS_PS_END};
 
 namespace wpt_support {
 
-bool install(api::Engine* engine) {
+bool install(api::Engine *engine) {
   if (!engine->wpt_mode()) {
     return true;
   }
@@ -71,4 +69,4 @@ bool install(api::Engine* engine) {
   return true;
 }
 
-} // namespace wpt_builtins
+} // namespace wpt_support

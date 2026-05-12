@@ -4,8 +4,6 @@
 #include "builtin.h"
 #include "rust-url.h"
 
-
-
 namespace builtins::web::url {
 
 class URLSearchParamsIterator : public BuiltinNoConstructor<URLSearchParamsIterator> {
@@ -121,7 +119,7 @@ public:
   static bool search(JSContext *cx, JS::HandleObject self, JS::MutableHandleValue rval);
   static bool username(JSContext *cx, JS::HandleObject self, JS::MutableHandleValue rval);
 
-  static JSObject *getObjectURL(std::string &url);
+  static JSObject *getObjectURL(JSContext *cx, std::string &url);
 
   static JSObject *create(JSContext *cx, JS::HandleObject self, jsurl::SpecString url_str,
                           const jsurl::JSUrl *base = nullptr);
@@ -143,7 +141,5 @@ public:
 bool install(api::Engine *engine);
 
 } // namespace builtins::web::url
-
-
 
 #endif

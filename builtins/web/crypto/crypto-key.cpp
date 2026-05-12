@@ -10,15 +10,13 @@
 #include <openssl/err.h>
 #include <utility>
 
-
-
 namespace builtins::web::crypto {
 
-CryptoKeyUsages::CryptoKeyUsages(uint8_t mask) : mask(mask) { };
+CryptoKeyUsages::CryptoKeyUsages(uint8_t mask) : mask(mask) {};
 CryptoKeyUsages::CryptoKeyUsages(bool encrypt, bool decrypt, bool sign, bool verify,
                                  bool derive_key, bool derive_bits, bool wrap_key,
                                  bool unwrap_key) {
-  
+
   if (encrypt) {
     this->mask |= encrypt_flag;
   }
@@ -45,7 +43,7 @@ CryptoKeyUsages::CryptoKeyUsages(bool encrypt, bool decrypt, bool sign, bool ver
   }
 };
 
-CryptoKeyUsages CryptoKeyUsages::from(const std::vector<std::string>& key_usages) {
+CryptoKeyUsages CryptoKeyUsages::from(const std::vector<std::string> &key_usages) {
   uint8_t mask = 0;
   for (const auto &usage : key_usages) {
     if (usage == "encrypt") {
@@ -134,7 +132,7 @@ bool CryptoKey::algorithm_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj.get()) {
+  if (self == proto_obj(cx).get()) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "algorithm get", "CryptoKey");
   }
 
@@ -152,7 +150,7 @@ bool CryptoKey::extractable_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj.get()) {
+  if (self == proto_obj(cx).get()) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "extractable get", "CryptoKey");
   }
 
@@ -166,7 +164,7 @@ bool CryptoKey::type_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0)
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj.get()) {
+  if (self == proto_obj(cx).get()) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "type get", "CryptoKey");
   }
 
@@ -210,7 +208,7 @@ bool CryptoKey::usages_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj.get()) {
+  if (self == proto_obj(cx).get()) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "usages get", "CryptoKey");
   }
 
@@ -337,7 +335,7 @@ BignumPtr make_bignum(std::string_view bytes) {
   }
 
   auto *bn = BN_bin2bn(reinterpret_cast<const unsigned char *>(bytes.data()),
-                      static_cast<int>(bytes.length()), nullptr);
+                       static_cast<int>(bytes.length()), nullptr);
   return BignumPtr(bn);
 }
 
@@ -431,7 +429,8 @@ EvpPkeyPtr create_ec_key_from_parts(JSContext *cx, CryptoAlgorithmECDSA_Import *
     return nullptr;
   }
 
-  if (EC_POINT_set_affine_coordinates(group.get(), point.get(), x_bn.get(), y_bn.get(), nullptr) == 0) {
+  if (EC_POINT_set_affine_coordinates(group.get(), point.get(), x_bn.get(), y_bn.get(), nullptr) ==
+      0) {
     return nullptr;
   }
 
@@ -447,10 +446,12 @@ EvpPkeyPtr create_ec_key_from_parts(JSContext *cx, CryptoAlgorithmECDSA_Import *
     return nullptr;
   }
 
-  if ((OSSL_PARAM_BLD_push_utf8_string(bld.get(), OSSL_PKEY_PARAM_GROUP_NAME, curve_name, 0) == 0) ||
+  if ((OSSL_PARAM_BLD_push_utf8_string(bld.get(), OSSL_PKEY_PARAM_GROUP_NAME, curve_name, 0) ==
+       0) ||
       (OSSL_PARAM_BLD_push_BN(bld.get(), OSSL_PKEY_PARAM_EC_PUB_X, x_bn.get()) == 0) ||
       (OSSL_PARAM_BLD_push_BN(bld.get(), OSSL_PKEY_PARAM_EC_PUB_Y, y_bn.get()) == 0) ||
-      (OSSL_PARAM_BLD_push_octet_string(bld.get(), OSSL_PKEY_PARAM_PUB_KEY, pub_key, pub_key_len) == 0)) {
+      (OSSL_PARAM_BLD_push_octet_string(bld.get(), OSSL_PKEY_PARAM_PUB_KEY, pub_key, pub_key_len) ==
+       0)) {
     return nullptr;
   }
 
@@ -528,7 +529,8 @@ EvpPkeyPtr create_rsa_key_from_parts(
   bool is_private = !private_exponent.empty();
   if (is_private) {
     d_bn = make_bignum(private_exponent);
-    if (!d_bn || (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_D, d_bn.get()) == 0)) {
+    if (!d_bn ||
+        (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_D, d_bn.get()) == 0)) {
       return nullptr;
     }
 
@@ -545,20 +547,20 @@ EvpPkeyPtr create_rsa_key_from_parts(
     }
 
     dmp1_bn = make_bignum(exponent1);
-    if (!dmp1_bn ||
-        (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_EXPONENT1, dmp1_bn.get()) == 0)) {
+    if (!dmp1_bn || (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_EXPONENT1,
+                                            dmp1_bn.get()) == 0)) {
       return nullptr;
     }
 
     dmq1_bn = make_bignum(exponent2);
-    if (!dmq1_bn ||
-        (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_EXPONENT2, dmq1_bn.get()) == 0)) {
+    if (!dmq1_bn || (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_EXPONENT2,
+                                            dmq1_bn.get()) == 0)) {
       return nullptr;
     }
 
     iqmp_bn = make_bignum(coefficient);
-    if (!iqmp_bn ||
-        (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_COEFFICIENT1, iqmp_bn.get()) == 0)) {
+    if (!iqmp_bn || (OSSL_PARAM_BLD_push_BN(param_bld.get(), OSSL_PKEY_PARAM_RSA_COEFFICIENT1,
+                                            iqmp_bn.get()) == 0)) {
       return nullptr;
     }
   }
@@ -599,7 +601,7 @@ JSObject *CryptoKey::createHMAC(JSContext *cx, CryptoAlgorithmHMAC_Import *algor
   MOZ_ASSERT(cx);
   MOZ_ASSERT(algorithm);
   JS::RootedObject instance(
-      cx, JS_NewObjectWithGivenProto(cx, &CryptoKey::class_, CryptoKey::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &CryptoKey::class_, CryptoKey::proto_obj(cx)));
   if (!instance) {
     return nullptr;
   }
@@ -610,7 +612,8 @@ JSObject *CryptoKey::createHMAC(JSContext *cx, CryptoAlgorithmHMAC_Import *algor
   }
 
   JS::SetReservedSlot(instance, Slots::Algorithm, JS::ObjectValue(*alg));
-  JS::SetReservedSlot(instance, Slots::Type, JS::Int32Value(static_cast<uint8_t>(CryptoKeyType::Secret)));
+  JS::SetReservedSlot(instance, Slots::Type,
+                      JS::Int32Value(static_cast<uint8_t>(CryptoKeyType::Secret)));
   JS::SetReservedSlot(instance, Slots::Extractable, JS::BooleanValue(extractable));
   JS::SetReservedSlot(instance, Slots::Usages, JS::Int32Value(usages.toInt()));
   JS::SetReservedSlot(instance, Slots::KeyDataLength, JS::Int32Value(data->size()));
@@ -660,7 +663,7 @@ JSObject *CryptoKey::createECDSA(JSContext *cx, CryptoAlgorithmECDSA_Import *alg
   }
 
   JS::RootedObject instance(
-      cx, JS_NewObjectWithGivenProto(cx, &CryptoKey::class_, CryptoKey::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &CryptoKey::class_, CryptoKey::proto_obj(cx)));
   if (!instance) {
     return nullptr;
   }
@@ -749,7 +752,7 @@ JSObject *CryptoKey::createRSA(JSContext *cx, CryptoAlgorithmRSASSA_PKCS1_v1_5_I
   }
 
   JS::RootedObject instance(
-      cx, JS_NewObjectWithGivenProto(cx, &CryptoKey::class_, CryptoKey::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &CryptoKey::class_, CryptoKey::proto_obj(cx)));
   if (!instance) {
     return nullptr;
   }
@@ -789,7 +792,8 @@ JSObject *CryptoKey::createRSA(JSContext *cx, CryptoAlgorithmRSASSA_PKCS1_v1_5_I
 
   // Set the publicExponent attribute of algorithm to the BigInteger representation of the RSA
   // public exponent.
-  JS::RootedObject byte_array(cx, JS_NewUint8ArrayWithBuffer(cx, buffer, 0, keyData->exponent.size()));
+  JS::RootedObject byte_array(cx,
+                              JS_NewUint8ArrayWithBuffer(cx, buffer, 0, keyData->exponent.size()));
   JS::RootedValue publicExponent(cx, JS::ObjectValue(*byte_array));
   if (!JS_SetProperty(cx, alg, "publicExponent", publicExponent)) {
     return nullptr;
@@ -821,9 +825,8 @@ EVP_PKEY *CryptoKey::key(JSObject *self) {
 
 std::span<uint8_t> CryptoKey::hmacKeyData(JSObject *self) {
   MOZ_ASSERT(is_instance(self));
-  return {
-      static_cast<uint8_t *>(JS::GetReservedSlot(self, Slots::KeyData).toPrivate()),
-      static_cast<size_t>(JS::GetReservedSlot(self, Slots::KeyDataLength).toInt32())};
+  return {static_cast<uint8_t *>(JS::GetReservedSlot(self, Slots::KeyData).toPrivate()),
+          static_cast<size_t>(JS::GetReservedSlot(self, Slots::KeyDataLength).toInt32())};
 }
 
 JS::Result<bool> CryptoKey::is_algorithm(JSContext *cx, JS::HandleObject self,
@@ -868,5 +871,3 @@ bool CryptoKey::canVerify(JS::HandleObject self) {
 }
 
 } // namespace builtins::web::crypto
-
-

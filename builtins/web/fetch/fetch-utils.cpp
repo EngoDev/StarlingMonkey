@@ -198,7 +198,8 @@ std::optional<std::tuple<size_t, size_t>> extract_range(std::string_view range_q
 }
 
 // https://fetch.spec.whatwg.org/#abort-fetch
-bool abort_fetch(JSContext *cx, HandleObject promise, HandleObject request, HandleObject response, HandleValue error) {
+bool abort_fetch(JSContext *cx, HandleObject promise, HandleObject request, HandleObject response,
+                 HandleValue error) {
   // 1. Reject promise with error.
   // This is a no-op if promise has already fulfilled.
   JS_SetPendingException(cx, error);

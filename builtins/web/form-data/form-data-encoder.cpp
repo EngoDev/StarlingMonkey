@@ -160,9 +160,7 @@ std::string normalize_and_escape(std::string_view src) {
   return escaped.value();
 }
 
-}// namespace
-
-
+} // namespace
 
 namespace builtins::web::form_data {
 
@@ -187,10 +185,10 @@ struct StreamContext {
     return outbuf.size() - read;
   }
 
- // Writes as many elements from the range [first, last) into the underlying buffer as possible.
- //
- // This function is deliberately infallible as it simply writes up to the available buffer size
- // and returns how many elements were successfully written.
+  // Writes as many elements from the range [first, last) into the underlying buffer as possible.
+  //
+  // This function is deliberately infallible as it simply writes up to the available buffer size
+  // and returns how many elements were successfully written.
   template <typename I> size_t write(I first, I last) {
     auto data_size = static_cast<size_t>(std::distance(first, last));
     if (data_size == 0) {
@@ -239,7 +237,9 @@ class MultipartFormDataImpl {
   size_t chunk_idx_{0};
   size_t file_leftovers_{0};
 
-  bool is_draining() { return ((file_leftovers_ != 0U) || (static_cast<unsigned int>(!remainder_.empty()) != 0U)); };
+  bool is_draining() {
+    return ((file_leftovers_ != 0U) || (static_cast<unsigned int>(!remainder_.empty()) != 0U));
+  };
 
   template <typename I> void write_and_store_remainder(StreamContext &stream, I first, I last);
 
@@ -251,11 +251,10 @@ class MultipartFormDataImpl {
   bool handle_close(JSContext *cx, StreamContext &stream);
 
 public:
-  MultipartFormDataImpl(std::string boundary)
-      :  boundary_(std::move(boundary)) {}
+  MultipartFormDataImpl(std::string boundary) : boundary_(std::move(boundary)) {}
 
-  mozilla::Result<size_t, OutOfMemory> query_length(JSContext* cx, const EntryList *entries);
-  std::string boundary() {  return boundary_; };
+  mozilla::Result<size_t, OutOfMemory> query_length(JSContext *cx, const EntryList *entries);
+  std::string boundary() { return boundary_; };
   bool read_next(JSContext *cx, StreamContext &stream);
 };
 
@@ -337,18 +336,22 @@ void MultipartFormDataImpl::write_and_store_remainder(StreamContext &stream, I f
 // - The parts are delimited with a boundary delimiter, constructed using CRLF, "--",
 //   and the value of the "boundary" parameter.
 //   See https://datatracker.ietf.org/doc/html/rfc7578#section-4.1
-// - Each part MUST contain a Content-Disposition header field where the disposition type is "form-data".
-//   The Content-Disposition header field MUST also contain an additional parameter of "name"; the value of
-//   the "name" parameter is the original field name from the form.
-//   See https://datatracker.ietf.org/doc/html/rfc7578#section-4.2
-// - For form data that represents the content of a file, a name for the file SHOULD be supplied as well,
+// - Each part MUST contain a Content-Disposition header field where the disposition type is
+// "form-data".
+//   The Content-Disposition header field MUST also contain an additional parameter of "name"; the
+//   value of the "name" parameter is the original field name from the form. See
+//   https://datatracker.ietf.org/doc/html/rfc7578#section-4.2
+// - For form data that represents the content of a file, a name for the file SHOULD be supplied as
+// well,
 //   by using a "filename" parameter of the Content-Disposition header field.
 //   See https://datatracker.ietf.org/doc/html/rfc7578#section-4.2
-// - Each part MAY have an (optional) "Content-Type" header field, which defaults to "text/plain".  If the
-//   contents of a file are to be sent, the file data SHOULD be labeled with an appropriate media type, if
-//   known, or "application/octet-stream".
+// - Each part MAY have an (optional) "Content-Type" header field, which defaults to "text/plain".
+// If the
+//   contents of a file are to be sent, the file data SHOULD be labeled with an appropriate media
+//   type, if known, or "application/octet-stream".
 //
-// Additionaly from the https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart%2Fform-data-encoding-algorithm
+// Additionaly from the
+// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart%2Fform-data-encoding-algorithm
 // - The parts of the generated multipart/form-data resource that correspond to non-file fields
 //   must not have a `Content-Type` header specified.
 // - Replace every occurrence of U+000D (CR) not followed by U+000A (LF), and every occurrence
@@ -358,8 +361,8 @@ void MultipartFormDataImpl::write_and_store_remainder(StreamContext &stream, I f
 //   bullet point must be escaped by replacing any 0x0A (LF) bytes with the byte sequence `%0A`,
 //   0x0D (CR) with `%0D` and 0x22 (") with `%22`.
 //
-// The two bullets above for "name" are folded into `normalize_and_escape`. The filename on the other
-// hand is escaped using `escape_name`.
+// The two bullets above for "name" are folded into `normalize_and_escape`. The filename on the
+// other hand is escaped using `escape_name`.
 bool MultipartFormDataImpl::handle_entry_header(JSContext *cx, StreamContext &stream) {
   auto entry = stream.entries->begin()[chunk_idx_];
   auto header = fmt::memory_buffer();
@@ -398,9 +401,10 @@ bool MultipartFormDataImpl::handle_entry_header(JSContext *cx, StreamContext &st
 }
 
 // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart%2Fform-data-encoding-algorithm
-// - If entry's value is not a File object, then replace every occurrence of U+000D (CR) not followed by U+000A (LF),
-//   and every occurrence of U+000A (LF) not preceded by U+000D (CR), in entry's value, by a string consisting of a
-//   U+000D (CR) and U+000A (LF) - this is folded into `normalize_newlines`.
+// - If entry's value is not a File object, then replace every occurrence of U+000D (CR) not
+// followed by U+000A (LF),
+//   and every occurrence of U+000A (LF) not preceded by U+000D (CR), in entry's value, by a string
+//   consisting of a U+000D (CR) and U+000A (LF) - this is folded into `normalize_newlines`.
 bool MultipartFormDataImpl::handle_entry_body(JSContext *cx, StreamContext &stream) {
   auto entry = stream.entries->begin()[chunk_idx_];
 
@@ -489,13 +493,14 @@ bool MultipartFormDataImpl::read_next(JSContext *cx, StreamContext &stream) {
 // Returns `std::nullopt` if any string conversion fails. This function simulates
 // the multipart/form-data encoding process without actually writing to a buffer.
 // Instead, it accumulates the total size of each encoding step.
-mozilla::Result<size_t, OutOfMemory> MultipartFormDataImpl::query_length(JSContext* cx, const EntryList *entries) {
+mozilla::Result<size_t, OutOfMemory> MultipartFormDataImpl::query_length(JSContext *cx,
+                                                                         const EntryList *entries) {
   size_t total = 0;
 
-  constexpr const char* content_disp_lit = "Content-Disposition: form-data; name=\"\"";
-  constexpr const char* content_type_lit = "Content-Type: ";
-  constexpr const char* filename_lit = "; filename=\"\"";
-  constexpr const char* default_mime_lit = "application/octet-stream";
+  constexpr const char *content_disp_lit = "Content-Disposition: form-data; name=\"\"";
+  constexpr const char *content_type_lit = "Content-Type: ";
+  constexpr const char *filename_lit = "; filename=\"\"";
+  constexpr const char *default_mime_lit = "application/octet-stream";
 
   const size_t content_disp_len = strlen(content_disp_lit);
   const size_t content_type_len = strlen(content_type_lit);
@@ -504,7 +509,7 @@ mozilla::Result<size_t, OutOfMemory> MultipartFormDataImpl::query_length(JSConte
   const size_t crlf_len = strlen(CRLF);
 
   // For every entry in the FormData
-  for (const auto& entry : *entries) {
+  for (const auto &entry : *entries) {
     // Add: "--" + boundary + CRLF
     total += 2 + boundary_.size() + crlf_len;
 
@@ -519,7 +524,7 @@ mozilla::Result<size_t, OutOfMemory> MultipartFormDataImpl::query_length(JSConte
       RootedValue value_str(cx, entry.value);
       auto value = core::encode(cx, value_str);
       if (!value) {
-        return mozilla::Result<size_t, OutOfMemory>(OutOfMemory {});
+        return mozilla::Result<size_t, OutOfMemory>(OutOfMemory{});
       }
 
       total += compute_normalized_len(value);
@@ -529,7 +534,7 @@ mozilla::Result<size_t, OutOfMemory> MultipartFormDataImpl::query_length(JSConte
       RootedString filename_str(cx, File::name(obj));
       auto filename = core::encode(cx, filename_str);
       if (!filename) {
-        return mozilla::Result<size_t, OutOfMemory>(OutOfMemory {});
+        return mozilla::Result<size_t, OutOfMemory>(OutOfMemory{});
       }
 
       // Literal: ; filename=""
@@ -544,7 +549,7 @@ mozilla::Result<size_t, OutOfMemory> MultipartFormDataImpl::query_length(JSConte
       RootedString type_str(cx, Blob::type(obj));
       auto type = core::encode(cx, type_str);
       if (!type) {
-        return mozilla::Result<size_t, OutOfMemory>(OutOfMemory {});
+        return mozilla::Result<size_t, OutOfMemory>(OutOfMemory{});
       }
 
       total += type.size() > 0 ? type.size() : default_mime_len;
@@ -626,7 +631,8 @@ JSObject *MultipartFormData::form_data(JSObject *self) {
   return &JS::GetReservedSlot(self, Slots::Form).toObject();
 }
 
-mozilla::Result<size_t, OutOfMemory> MultipartFormData::query_length(JSContext *cx, HandleObject self) {
+mozilla::Result<size_t, OutOfMemory> MultipartFormData::query_length(JSContext *cx,
+                                                                     HandleObject self) {
   RootedObject obj(cx, form_data(self));
 
   auto *entries = FormData::entry_list(obj);
@@ -648,7 +654,7 @@ JSObject *MultipartFormData::encode_stream(JSContext *cx, HandleObject self) {
 }
 
 JSObject *MultipartFormData::create(JSContext *cx, HandleObject form_data) {
-  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -662,12 +668,14 @@ JSObject *MultipartFormData::create(JSContext *cx, HandleObject form_data) {
     return nullptr;
   }
 
-  // The requirements for boundary are (https://datatracker.ietf.org/doc/html/rfc2046#section-5.1.1):
-  // Boundary delimiters must not appear within the encapsulated material, and must be no longer than
-  // 70 characters, not counting the two leading hyphens and consist of bcharsnospace characters,
-  // where EBNF for bcharsnospace is as follows:
+  // The requirements for boundary are
+  // (https://datatracker.ietf.org/doc/html/rfc2046#section-5.1.1): Boundary delimiters must not
+  // appear within the encapsulated material, and must be no longer than 70 characters, not counting
+  // the two leading hyphens and consist of bcharsnospace characters, where EBNF for bcharsnospace
+  // is as follows:
   //
-  // bcharsnospace := DIGIT / ALPHA / "'" / "(" / ")" / "+" / "_" / "," / "-" / "." / "/" / ":" / "=" / "?"
+  // bcharsnospace := DIGIT / ALPHA / "'" / "(" / ")" / "+" / "_" / "," / "-" / "." / "/" / ":" /
+  // "=" / "?"
   //
   // e.g.:
   // This implementation: --BoundaryjXo5N4HEAXWcKrw7
@@ -684,7 +692,8 @@ JSObject *MultipartFormData::create(JSContext *cx, HandleObject form_data) {
   }
 
   JS::SetReservedSlot(self, Slots::Form, JS::ObjectValue(*form_data));
-  JS::SetReservedSlot(self, Slots::Inner, JS::PrivateValue(reinterpret_cast<void *>(impl.release())));
+  JS::SetReservedSlot(self, Slots::Inner,
+                      JS::PrivateValue(reinterpret_cast<void *>(impl.release())));
 
   return self;
 }
@@ -706,5 +715,3 @@ void MultipartFormData::finalize(JS::GCContext *gcx, JSObject *self) {
 }
 
 } // namespace builtins::web::form_data
-
-

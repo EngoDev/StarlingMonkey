@@ -439,7 +439,7 @@ public:
 
 class HttpIncomingRequest final : public HttpRequest, public HttpIncomingBodyOwner {
 public:
-  using RequestHandler = bool (*)(HttpIncomingRequest *request);
+  using RequestHandler = bool (*)(void *data, HttpIncomingRequest *request);
 
   HttpIncomingRequest() = delete;
   explicit HttpIncomingRequest(std::unique_ptr<HandleState> handle);
@@ -451,7 +451,7 @@ public:
   Result<HttpHeadersReadOnly *> headers() override;
   Result<HttpIncomingBody *> body() override;
 
-  static void set_handler(RequestHandler handler);
+  static void set_handler(RequestHandler handler, void *data);
 };
 
 class HttpOutgoingRequest final : public HttpRequest, public HttpOutgoingBodyOwner {

@@ -130,8 +130,7 @@ HttpHeaders::HttpHeaders(std::unique_ptr<HandleState> state)
     : HttpHeadersReadOnly(std::move(state)) {}
 
 HttpHeaders::HttpHeaders() {
-  handle_state_ =
-      std::make_unique<WASIHandle<HttpHeaders>>(wasi_http_types_constructor_fields());
+  handle_state_ = std::make_unique<WASIHandle<HttpHeaders>>(wasi_http_types_constructor_fields());
 }
 
 Result<HttpHeaders *> HttpHeaders::FromEntries(vector<tuple<HostString, HostString>> &entries) {
@@ -164,16 +163,11 @@ HttpHeaders::HttpHeaders(const HttpHeadersReadOnly &headers) : HttpHeadersReadOn
 // We guard against the list of forbidden headers Wasmtime uses:
 // https://github.com/bytecodealliance/wasmtime/blob/9afc64b4728d6e2067aa52331ff7b1d6f5275b5e/crates/wasi-http/src/types.rs#L273-L284
 static const std::vector forbidden_request_headers = {
-  "connection",
-  "host",
-  "http2-settings",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "proxy-connection",
-  "te",
-  "transfer-encoding",
-  "upgrade",
+    "connection",         "host",
+    "http2-settings",     "keep-alive",
+    "proxy-authenticate", "proxy-authorization",
+    "proxy-connection",   "te",
+    "transfer-encoding",  "upgrade",
 };
 
 // WASI hosts don't currently make a difference between request and response headers
@@ -393,10 +387,10 @@ class BodyWriteAllTask final : public api::AsyncTask {
 
 public:
   explicit BodyWriteAllTask(HttpOutgoingBody *outgoing_body, HostBytes bytes,
-                          api::TaskCompletionCallback completion_callback,
-                          HandleObject callback_receiver)
-      : outgoing_body_(outgoing_body), cb_(completion_callback),
-        cb_receiver_(callback_receiver), bytes_(std::move(bytes)) {
+                            api::TaskCompletionCallback completion_callback,
+                            HandleObject callback_receiver)
+      : outgoing_body_(outgoing_body), cb_(completion_callback), cb_receiver_(callback_receiver),
+        bytes_(std::move(bytes)) {
     outgoing_pollable_ = outgoing_body_->subscribe().unwrap();
   }
 
@@ -433,9 +427,7 @@ public:
     return true;
   }
 
-  [[nodiscard]] int32_t id() override {
-    return outgoing_pollable_;
-  }
+  [[nodiscard]] int32_t id() override { return outgoing_pollable_; }
 
   void trace(JSTracer *trc) override {
     JS::TraceEdge(trc, &cb_receiver_, "BodyWriteAllTask completion callback receiver");
@@ -443,7 +435,8 @@ public:
 };
 
 Result<Void> HttpOutgoingBody::write_all(api::Engine *engine, HostBytes bytes,
-  api::TaskCompletionCallback callback, HandleObject cb_receiver) {
+                                         api::TaskCompletionCallback callback,
+                                         HandleObject cb_receiver) {
   if (!valid()) {
     // TODO: proper error handling for all 154 error codes.
     return Result<Void>::err(154);
@@ -707,8 +700,7 @@ HttpOutgoingRequest *HttpOutgoingRequest::make(string_view method_str, optional<
     wasi_http_types_method_outgoing_request_set_authority(borrow, maybe_authority);
 
     // TODO: error handling on result
-    wasi_http_types_method_outgoing_request_set_path_with_query(borrow,
-                                                                      maybe_path_with_query);
+    wasi_http_types_method_outgoing_request_set_path_with_query(borrow, maybe_path_with_query);
   }
 
   auto *state = new WASIHandle<HttpOutgoingRequest>(handle);
@@ -1007,11 +999,12 @@ Result<HttpIncomingBody *> HttpIncomingRequest::body() {
 } // namespace host_api
 
 static host_api::HttpIncomingRequest::RequestHandler REQUEST_HANDLER = nullptr;
+static void *REQUEST_HANDLER_DATA = nullptr;
 static exports_wasi_http_response_outparam RESPONSE_OUT;
 
-void host_api::HttpIncomingRequest::set_handler(RequestHandler handler) {
-  MOZ_ASSERT(!REQUEST_HANDLER);
+void host_api::HttpIncomingRequest::set_handler(RequestHandler handler, void *data) {
   REQUEST_HANDLER = handler;
+  REQUEST_HANDLER_DATA = data;
 }
 
 host_api::Result<host_api::Void> host_api::HttpOutgoingResponse::send() {
@@ -1042,6 +1035,6 @@ void exports_wasi_http_incoming_handler(exports_wasi_http_incoming_request reque
   RESPONSE_OUT = response_out;
   auto state = new WASIHandle<host_api::HttpIncomingRequest>(request_handle);
   auto *request = new host_api::HttpIncomingRequest(std::unique_ptr<host_api::HandleState>(state));
-  auto res = REQUEST_HANDLER(request);
+  auto res = REQUEST_HANDLER(REQUEST_HANDLER_DATA, request);
   MOZ_RELEASE_ASSERT(res);
 }

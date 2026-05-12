@@ -124,7 +124,7 @@ JSObject *NativeStreamSink::create(JSContext *cx, JS::HandleObject owner,
                                    WriteAlgorithmImplementation *write,
                                    CloseAlgorithmImplementation *close,
                                    AbortAlgorithmImplementation *abort) {
-  JS::RootedObject sink(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject sink(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!sink) {
     return nullptr;
   }
@@ -137,5 +137,3 @@ JSObject *NativeStreamSink::create(JSContext *cx, JS::HandleObject owner,
   return sink;
 }
 } // namespace builtins::web::streams
-
-

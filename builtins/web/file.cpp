@@ -25,8 +25,6 @@ bool read_last_modified(JSContext *cx, HandleValue initv, int64_t *last_modified
 
 } // namespace
 
-
-
 namespace builtins::web::file {
 
 using blob::Blob;
@@ -53,7 +51,7 @@ const JSPropertySpec File::properties[] = {
 bool File::name_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "name get", "File");
   }
 
@@ -65,7 +63,7 @@ bool File::name_get(JSContext *cx, unsigned argc, JS::Value *vp) {
 bool File::lastModified_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "lastModified get", "File");
   }
 
@@ -119,8 +117,9 @@ bool File::init(JSContext *cx, HandleObject self, HandleValue fileBits, HandleVa
   return true;
 }
 
-JSObject* File::create(JSContext *cx, HandleValue fileBits, HandleValue fileName, HandleValue opts) {
-  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+JSObject *File::create(JSContext *cx, HandleValue fileBits, HandleValue fileName,
+                       HandleValue opts) {
+  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -154,11 +153,9 @@ bool File::constructor(JSContext *cx, unsigned argc, JS::Value *vp) {
 
 bool File::init_class(JSContext *cx, JS::HandleObject global) {
   Blob::register_subclass(&class_);
-  return init_class_impl(cx, global, Blob::proto_obj);
+  return init_class_impl(cx, global, Blob::proto_obj(cx));
 }
 
 bool install(api::Engine *engine) { return File::init_class(engine->cx(), engine->global()); }
 
 } // namespace builtins::web::file
-
-

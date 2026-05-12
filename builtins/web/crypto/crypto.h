@@ -3,8 +3,6 @@
 
 #include "builtin.h"
 
-
-
 namespace builtins::web::crypto {
 
 class Crypto : public BuiltinNoConstructor<Crypto> {
@@ -13,7 +11,7 @@ public:
   static constexpr const char *class_name = "Crypto";
   static const int ctor_length = 0;
 
-  static JS::PersistentRooted<JSObject *> subtle;
+  static RuntimePersistentRooted<JSObject *> subtle;
 
   enum Slots : uint8_t { Count };
   static const JSFunctionSpec static_methods[];
@@ -31,7 +29,5 @@ public:
 bool install(api::Engine *engine);
 
 } // namespace builtins::web::crypto
-
-
 
 #endif

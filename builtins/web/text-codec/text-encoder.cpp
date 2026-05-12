@@ -12,7 +12,7 @@ bool TextEncoder::encode(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "encode", "TextEncoder");
   }
 
@@ -51,7 +51,7 @@ bool TextEncoder::encodeInto(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(2);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "encodeInto", "TextEncoder");
   }
 
@@ -62,8 +62,8 @@ bool TextEncoder::encodeInto(JSContext *cx, unsigned argc, JS::Value *vp) {
   auto destination_value = args.get(1);
 
   if (!destination_value.isObject()) {
-    return api::throw_error(cx, api::Errors::TypeError, "TextEncoder.encodeInto",
-      "destination", "be a Uint8Array");
+    return api::throw_error(cx, api::Errors::TypeError, "TextEncoder.encodeInto", "destination",
+                            "be a Uint8Array");
   }
   JS::RootedObject destination(cx, &destination_value.toObject());
 
@@ -73,8 +73,8 @@ bool TextEncoder::encodeInto(JSContext *cx, unsigned argc, JS::Value *vp) {
   // JS_GetObjectAsUint8Array returns nullptr without throwing if the object is not
   // a Uint8Array, so we don't need to do explicit checks before calling it.
   if (!JS_GetObjectAsUint8Array(destination, &len, &is_shared, &data)) {
-    return api::throw_error(cx, api::Errors::TypeError, "TextEncoder.encodeInto",
-      "destination", "be a Uint8Array");
+    return api::throw_error(cx, api::Errors::TypeError, "TextEncoder.encodeInto", "destination",
+                            "be a Uint8Array");
   }
   auto span = AsWritableChars(mozilla::Span(data, len));
   auto maybe = JS_EncodeStringToUTF8BufferPartial(cx, source, span);
@@ -108,7 +108,7 @@ bool TextEncoder::encoding_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "encoding get", "TextEncoder");
   }
 
@@ -158,5 +158,3 @@ bool TextEncoder::init_class(JSContext *cx, JS::HandleObject global) {
 }
 
 } // namespace builtins::web::text_codec
-
-

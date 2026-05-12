@@ -1,14 +1,14 @@
-#include "extension-api.h"
 #include "allocator.h"
 #include "debugger.h"
 #include "encode.h"
 #include "event_loop.h"
+#include "extension-api.h"
 #include "script_loader.h"
 
 #include "js/CompilationAndEvaluation.h"
-#include "js/Modules.h"
 #include "js/ForOfIterator.h"
 #include "js/Initialization.h"
+#include "js/Modules.h"
 #include "js/Promise.h"
 #include "jsfriendapi.h"
 
@@ -18,8 +18,8 @@
 #include <utility>
 
 #ifdef MEM_STATS
-#include <string>
 #include "memory-reporting.h"
+#include <string>
 
 size_t size_of_cb(const void *ptr) { return ptr ? sizeof(ptr) : 0; }
 
@@ -50,21 +50,19 @@ static bool dump_mem_stats(JSContext *cx) {
   if (config_->verbose) {                                                                          \
     fmt::print("trace({}:{}): {}\n", __func__, __LINE__, fmt::format(__VA_ARGS__));                \
     fflush(stdout);                                                                                \
-}
-
+  }
 
 using std::chrono::microseconds;
 
 using JS::Value;
 
 using api::Engine;
-using api::EngineState;
 using api::EngineConfig;
+using api::EngineState;
 
 void dump_error(JSContext *cx, HandleValue error, bool *has_stack, FILE *fp);
 
-__attribute__((weak))
-bool debug_logging_enabled() { return DEBUG_LOGGING; }
+__attribute__((weak)) bool debug_logging_enabled() { return DEBUG_LOGGING; }
 #define LOG(...)                                                                                   \
   if (debug_logging_enabled()) {                                                                   \
     printf(__VA_ARGS__);                                                                           \
@@ -187,12 +185,8 @@ void dump_promise_rejection(JSContext *cx, HandleValue reason, HandleObject prom
 }
 
 /* The class of the global object. */
-static JSClass global_class = {.name="global", .flags=JSCLASS_GLOBAL_FLAGS, .cOps=&JS::DefaultGlobalClassOps};
-
-JS::PersistentRootedObject GLOBAL;
-JS::PersistentRootedObject INIT_SCRIPT_GLOBAL;
-static ScriptLoader* scriptLoader;
-JS::PersistentRootedObject unhandledRejectedPromises;
+static JSClass global_class = {
+    .name = "global", .flags = JSCLASS_GLOBAL_FLAGS, .cOps = &JS::DefaultGlobalClassOps};
 
 void gc_callback(JSContext *cx, JSGCStatus status, JS::GCReason reason, void *data) {
   LOG("gc for reason %s, %s\n", JS::ExplainGCReason(reason), status ? "end" : "start");
@@ -201,6 +195,7 @@ void gc_callback(JSContext *cx, JSGCStatus status, JS::GCReason reason, void *da
 static void rejection_tracker(JSContext *cx, bool mutedErrors, JS::HandleObject promise,
                               JS::PromiseRejectionHandlingState state, void *data) {
   RootedValue promiseVal(cx, JS::ObjectValue(*promise));
+  RootedObject unhandledRejectedPromises(cx, Engine::get(cx)->unhandled_rejected_promises());
 
   switch (state) {
   case JS::PromiseRejectionHandlingState::Unhandled: {
@@ -245,104 +240,100 @@ bool fix_math_random(JSContext *cx, HandleObject global) {
   return JS_DefineFunctions(cx, math, funs);
 }
 
-static Engine *ENGINE;
-JS::PersistentRootedValue SCRIPT_VALUE;
-
-bool create_content_global(JSContext * cx) {
+bool Engine::create_content_global() {
   JS::RealmOptions options;
   options.creationOptions().setStreamsEnabled(true);
 
   // TODO: restore
-  // JS::DisableIncrementalGC(cx);
-  // JS_SetGCParameter(cx, JSGC_MAX_EMPTY_CHUNK_COUNT, 1);
+  // JS::DisableIncrementalGC(cx_);
+  // JS_SetGCParameter(cx_, JSGC_MAX_EMPTY_CHUNK_COUNT, 1);
 
   RootedObject global(
-      cx, JS_NewGlobalObject(cx, &global_class, nullptr, JS::FireOnNewGlobalHook, options));
+      cx_, JS_NewGlobalObject(cx_, &global_class, nullptr, JS::FireOnNewGlobalHook, options));
   if (!global) {
     return false;
   }
 
-  JSAutoRealm ar(cx, global);
-  if (!JS::InitRealmStandardClasses(cx) || !fix_math_random(cx, global)) {
+  JSAutoRealm ar(cx_, global);
+  if (!JS::InitRealmStandardClasses(cx_) || !fix_math_random(cx_, global)) {
     return false;
   }
 
-  GLOBAL.init(cx, global);
+  global_.init(cx_, global);
   return true;
 }
 
 static bool define_builtin_module(JSContext *cx, unsigned argc, Value *vp);
 
-bool create_initializer_global(Engine *engine) {
-  auto *cx = engine->cx();
-
+bool Engine::create_initializer_global() {
   JS::RealmOptions options;
-  options.creationOptions()
-      .setStreamsEnabled(true)
-      .setExistingCompartment(engine->global());
+  options.creationOptions().setStreamsEnabled(true).setExistingCompartment(global_);
 
-  static JSClass global_class = {.name="global", .flags=JSCLASS_GLOBAL_FLAGS, .cOps=&JS::DefaultGlobalClassOps};
-  RootedObject global(cx);
-  global = JS_NewGlobalObject(cx, &global_class, nullptr, JS::DontFireOnNewGlobalHook, options);
+  static JSClass global_class = {
+      .name = "global", .flags = JSCLASS_GLOBAL_FLAGS, .cOps = &JS::DefaultGlobalClassOps};
+  RootedObject global(cx_);
+  global = JS_NewGlobalObject(cx_, &global_class, nullptr, JS::DontFireOnNewGlobalHook, options);
   if (!global) {
     return false;
   }
 
-  JSAutoRealm ar(cx, global);
+  JSAutoRealm ar(cx_, global);
 
-  if (!JS_DefineFunction(cx, global, "defineBuiltinModule", ::define_builtin_module, 2, 0) ||
-      !JS_DefineProperty(cx, global, "contentGlobal", ENGINE->global(), JSPROP_READONLY) ||
-      !JS_DefineFunction(cx, global, "print", content_debugger::dbg_print, 1, 0)) {
+  if (!JS_DefineFunction(cx_, global, "defineBuiltinModule", ::define_builtin_module, 2, 0) ||
+      !JS_DefineProperty(cx_, global, "contentGlobal", global_, JSPROP_READONLY) ||
+      !JS_DefineFunction(cx_, global, "print", content_debugger::dbg_print, 1, 0)) {
     return false;
   }
 
-  INIT_SCRIPT_GLOBAL.init(cx, global);
+  init_script_global_.init(cx_, global);
   return true;
 }
 
-bool init_js(const EngineConfig& config) {
+bool Engine::init_js(const EngineConfig &config) {
   JS_Init();
 
-  JSContext *cx = JS_NewContext(JS::DefaultHeapMaxBytes);
-  if (!cx) {
+  cx_ = JS_NewContext(JS::DefaultHeapMaxBytes);
+  if (!cx_) {
     return false;
   }
-  CONTEXT = cx;
-  SCRIPT_VALUE.init(cx);
+  set_cabi_alloc_context(cx_);
+  JS_SetContextPrivate(cx_, this);
+  script_value_.init(cx_);
 
-  if (!js::UseInternalJobQueues(cx) || !JS::InitSelfHostedCode(cx)) {
+  if (!js::UseInternalJobQueues(cx_) || !JS::InitSelfHostedCode(cx_)) {
     return false;
   }
 
   bool ENABLE_PBL = std::string(std::getenv("ENABLE_PBL")) == "1";
   if (ENABLE_PBL) {
-    JS_SetGlobalJitCompilerOption(cx, JSJitCompilerOption::JSJITCOMPILER_PORTABLE_BASELINE_ENABLE,
+    JS_SetGlobalJitCompilerOption(cx_, JSJitCompilerOption::JSJITCOMPILER_PORTABLE_BASELINE_ENABLE,
                                   1);
     JS_SetGlobalJitCompilerOption(
-        cx, JSJitCompilerOption::JSJITCOMPILER_PORTABLE_BASELINE_WARMUP_THRESHOLD, 0);
+        cx_, JSJitCompilerOption::JSJITCOMPILER_PORTABLE_BASELINE_WARMUP_THRESHOLD, 0);
   }
 
-  if (!create_content_global(cx) || !create_initializer_global(ENGINE)) {
+  if (!create_content_global() || !create_initializer_global()) {
     return false;
   }
 
-  JSAutoRealm ar(cx, GLOBAL);
+  JSAutoRealm ar(cx_, global_);
 
-  JS::SetPromiseRejectionTrackerCallback(cx, rejection_tracker);
-  unhandledRejectedPromises.init(cx, JS::NewSetObject(cx));
-  if (!unhandledRejectedPromises) {
+  JS::SetPromiseRejectionTrackerCallback(cx_, rejection_tracker);
+  unhandled_rejected_promises_.init(cx_, JS::NewSetObject(cx_));
+  if (!unhandled_rejected_promises_) {
     return false;
   }
 
-  auto *opts = new JS::CompileOptions(cx);
+  auto *opts = new JS::CompileOptions(cx_);
 
   // This ensures that we're eagerly loading the sript, and not lazily
   // generating bytecode for functions.
   // https://searchfox.org/mozilla-central/rev/5b2d2863bd315f232a3f769f76e0eb16cdca7cb0/js/public/CompileOptions.h#571-574
   opts->setForceFullParse();
-  scriptLoader = new ScriptLoader(ENGINE, opts, config.path_prefix);
+  script_loader_ = std::make_unique<ScriptLoader>(this, opts, config.path_prefix);
 
-  // TODO: restore in a way that doesn't cause a dependency on the Performance builtin in the core runtime.
+  // TODO: restore in a way that doesn't cause a dependency on the Performance builtin in the core
+  // runtime.
   //   builtins::Performance::timeOrigin.emplace(
   //       std::chrono::high_resolution_clock::now());
 
@@ -350,6 +341,7 @@ bool init_js(const EngineConfig& config) {
 }
 
 static bool report_unhandled_promise_rejections(JSContext *cx) {
+  RootedObject unhandledRejectedPromises(cx, Engine::get(cx)->unhandled_rejected_promises());
   RootedValue iterable(cx);
   if (!JS::SetValues(cx, unhandledRejectedPromises, &iterable)) {
     return false;
@@ -391,7 +383,7 @@ static void DumpPendingException(JSContext *cx, const char *description, FILE *f
             "when trying to retrieve it. Aborting.\n",
             description);
   } else {
-      fprintf(fp, "Exception while %s\n", description);
+    fprintf(fp, "Exception while %s\n", description);
     JS::ErrorReportBuilder report(cx);
     if (!report.init(cx, exception, JS::ErrorReportBuilder::WithSideEffects)) {
       fprintf(fp, "unable to build error report");
@@ -413,6 +405,7 @@ static void abort(JSContext *cx, const char *description) {
             description);
   }
 
+  RootedObject unhandledRejectedPromises(cx, Engine::get(cx)->unhandled_rejected_promises());
   if (JS::SetSize(cx, unhandledRejectedPromises) > 0) {
     fprintf(stderr, "Additionally, some promises were rejected, but the "
                     "rejection never handled:\n");
@@ -428,16 +421,16 @@ extern bool install_builtins(Engine *engine);
 #ifdef DEBUG
 static bool trap(JSContext *cx, unsigned argc, JS::Value *vp) {
   JS::CallArgs args = CallArgsFromVp(argc, vp);
-  ENGINE->dump_value(args.get(0));
+  Engine::get(cx)->dump_value(args.get(0));
   MOZ_ASSERT(false, "trap function called");
   return false;
 }
 #endif
 
+Engine::~Engine() = default;
+
 Engine::Engine(std::unique_ptr<EngineConfig> config) {
   // total_compute = 0;
-  MOZ_ASSERT(!ENGINE);
-  ENGINE = this;
   config_ = std::move(config);
 
   TRACE("StarlingMonkey engine initializing");
@@ -446,9 +439,9 @@ Engine::Engine(std::unique_ptr<EngineConfig> config) {
     abort("Initializing JS Engine");
   }
 
-  JS_SetContextPrivate(cx(), this);
   JS::EnterRealm(cx(), global());
-  core::EventLoop::init(cx());
+  event_loop_ = std::make_unique<core::EventLoop>();
+  event_loop_->init(cx());
 
   if (!install_builtins(this)) {
     abort("installing builtins");
@@ -469,7 +462,7 @@ Engine::Engine(std::unique_ptr<EngineConfig> config) {
   }
 
   TRACE("Module mode: ", config_->module_mode);
-  scriptLoader->enable_module_mode(config_->module_mode);
+  script_loader_->enable_module_mode(config_->module_mode);
 
   auto content_script_path = config_->content_script_path;
 
@@ -499,49 +492,46 @@ Engine::Engine(std::unique_ptr<EngineConfig> config) {
     TRACE("Evaluating initial inline script");
     JS::SourceText<mozilla::Utf8Unit> source;
     std::string path = "<eval>";
-    const std::string& script = config_->content_script.value();
+    const std::string &script = config_->content_script.value();
     RootedValue result(cx());
-    if (!source.init(cx(), script.c_str(), script.size(), JS::SourceOwnership::Borrowed)
-        || !eval_toplevel(source, path, &result)) {
+    if (!source.init(cx(), script.c_str(), script.size(), JS::SourceOwnership::Borrowed) ||
+        !eval_toplevel(source, path, &result)) {
       abort("evaluating top-level inline script");
     }
   }
 }
 
-JSContext *Engine::cx() { return CONTEXT; }
-
-Engine *Engine::get(JSContext *cx) {
-  return static_cast<Engine *>(JS_GetContextPrivate(cx));
+JSContext *Engine::cx() {
+  set_cabi_alloc_context(cx_);
+  return cx_;
 }
 
-HandleObject Engine::global() { return GLOBAL; }
+Engine *Engine::get(JSContext *cx) { return static_cast<Engine *>(JS_GetContextPrivate(cx)); }
+
+HandleObject Engine::global() { return global_; }
 EngineState Engine::state() { return state_; }
-bool Engine::debugging_enabled() {
-  return config_->debugging;
-}
+bool Engine::debugging_enabled() { return config_->debugging; }
 bool Engine::wpt_mode() { return config_->wpt_mode; }
-const mozilla::Maybe<std::string> &Engine::init_location() const {
-  return config_->init_location;
-}
+const mozilla::Maybe<std::string> &Engine::init_location() const { return config_->init_location; }
+
+ScriptLoader *Engine::script_loader() { return script_loader_.get(); }
 
 void Engine::finish_pre_initialization() {
   MOZ_ASSERT(state_ == EngineState::ScriptPreInitializing);
-  js::ResetMathRandomSeed(ENGINE->cx());
+  js::ResetMathRandomSeed(cx_);
   state_ = EngineState::Initialized;
 }
 
-HandleValue Engine::script_value() {
-  return SCRIPT_VALUE;
-}
+HandleValue Engine::script_value() { return script_value_; }
 
 void Engine::abort(const char *reason) {
   state_ = EngineState::Aborted;
-  ::abort(CONTEXT, reason);
+  ::abort(cx_, reason);
 }
 
-bool Engine::define_builtin_module(const char* id, HandleValue builtin) {
+bool Engine::define_builtin_module(const char *id, HandleValue builtin) {
   TRACE("Defining builtin module '", id, "'");
-  return scriptLoader->define_builtin_module(id, builtin);
+  return script_loader_->define_builtin_module(id, builtin);
 }
 
 static bool define_builtin_module(JSContext *cx, unsigned argc, Value *vp) {
@@ -565,12 +555,12 @@ static bool define_builtin_module(JSContext *cx, unsigned argc, Value *vp) {
 bool Engine::run_initialization_script() {
   auto *cx = this->cx();
 
-  JSAutoRealm ar(cx, INIT_SCRIPT_GLOBAL);
+  JSAutoRealm ar(cx, init_script_global_);
 
   auto path = config_->initializer_script_path.value();
   TRACE("Running initialization script from file ", path);
   JS::SourceText<mozilla::Utf8Unit> source;
-  if (!scriptLoader->load_resolved_script(CONTEXT, path, path, source)) {
+  if (!script_loader_->load_resolved_script(cx_, path, path, source)) {
     return false;
   }
   auto *opts = new JS::CompileOptions(cx);
@@ -584,7 +574,7 @@ bool Engine::run_initialization_script() {
   return JS_ExecuteScript(cx, script, &result);
 }
 
-HandleObject Engine::init_script_global() { return INIT_SCRIPT_GLOBAL; }
+HandleObject Engine::init_script_global() { return init_script_global_; }
 
 bool Engine::eval_toplevel(JS::SourceText<mozilla::Utf8Unit> &source, std::string_view path,
                            MutableHandleValue result) {
@@ -593,11 +583,11 @@ bool Engine::eval_toplevel(JS::SourceText<mozilla::Utf8Unit> &source, std::strin
 
   RootedValue ns(cx());
   RootedValue tla_promise(cx());
-  if (!scriptLoader->eval_top_level_script(path, source, &ns, &tla_promise)) {
+  if (!script_loader_->eval_top_level_script(path, source, &ns, &tla_promise)) {
     return false;
   }
 
-  SCRIPT_VALUE = ns;
+  script_value_ = ns;
   this->run_event_loop();
 
   // TLA rejections during pre-initialization are treated as top-level exceptions.
@@ -616,7 +606,7 @@ bool Engine::eval_toplevel(JS::SourceText<mozilla::Utf8Unit> &source, std::strin
   // Report any promise rejections that weren't handled before snapshotting.
   // TODO: decide whether we should abort in this case, instead of just
   // reporting.
-  if (JS::SetSize(cx(), unhandledRejectedPromises) > 0) {
+  if (JS::SetSize(cx(), unhandled_rejected_promises_) > 0) {
     report_unhandled_promise_rejections();
   }
 
@@ -653,60 +643,56 @@ bool Engine::eval_toplevel(JS::SourceText<mozilla::Utf8Unit> &source, std::strin
 
 bool Engine::eval_toplevel(std::string_view path, MutableHandleValue result) {
   JS::SourceText<mozilla::Utf8Unit> source;
-  if (!scriptLoader->load_script(CONTEXT, path, source)) {
+  if (!script_loader_->load_script(cx_, path, source)) {
     return false;
   }
 
   return eval_toplevel(source, path, result);
 }
 
-bool Engine::run_event_loop() {
-  return core::EventLoop::run_event_loop(this, 0);
-}
+bool Engine::run_event_loop() { return event_loop_->run_event_loop(this, 0); }
 
-void Engine::incr_event_loop_interest() {
-  core::EventLoop::incr_event_loop_interest();
-}
+void Engine::incr_event_loop_interest() { event_loop_->incr_event_loop_interest(); }
 
-void Engine::decr_event_loop_interest() {
-  core::EventLoop::decr_event_loop_interest();
-}
+void Engine::decr_event_loop_interest() { event_loop_->decr_event_loop_interest(); }
 
-bool Engine::dump_value(JS::Value val, FILE *fp) { return ::dump_value(CONTEXT, val, fp); }
-bool Engine::print_stack(FILE *fp) { return ::print_stack(CONTEXT, fp); }
+bool Engine::dump_value(JS::Value val, FILE *fp) { return ::dump_value(cx_, val, fp); }
+bool Engine::print_stack(FILE *fp) { return ::print_stack(cx_, fp); }
 
 void Engine::dump_pending_exception(const char *description, FILE *fp) {
-  DumpPendingException(CONTEXT, description, fp);
+  DumpPendingException(cx_, description, fp);
 }
 
 void Engine::dump_error(JS::HandleValue err, FILE *fp) {
   bool has_stack = false;
-  ::dump_error(CONTEXT, err, &has_stack, fp);
+  ::dump_error(cx_, err, &has_stack, fp);
   fflush(fp);
 }
 
 void Engine::dump_promise_rejection(HandleValue reason, HandleObject promise, FILE *fp) {
-  ::dump_promise_rejection(CONTEXT, reason, promise, fp);
+  ::dump_promise_rejection(cx_, reason, promise, fp);
 }
 
 bool Engine::debug_logging_enabled() { return ::debug_logging_enabled(); }
 
-bool Engine::has_pending_async_tasks() { return core::EventLoop::has_pending_async_tasks(); }
+bool Engine::has_pending_async_tasks() { return event_loop_->has_pending_async_tasks(); }
 
-void Engine::queue_async_task(const RefPtr<AsyncTask>& task) {
-  core::EventLoop::queue_async_task(task);
+void Engine::queue_async_task(const RefPtr<AsyncTask> &task) {
+  event_loop_->queue_async_task(task);
 }
 
-bool Engine::cancel_async_task(const RefPtr<AsyncTask>& task) {
-  return core::EventLoop::cancel_async_task(this, task);
+bool Engine::cancel_async_task(const RefPtr<AsyncTask> &task) {
+  return event_loop_->cancel_async_task(this, task);
 }
+
+HandleObject Engine::unhandled_rejected_promises() { return unhandled_rejected_promises_; }
 
 bool Engine::has_unhandled_promise_rejections() {
-  return JS::SetSize(CONTEXT, unhandledRejectedPromises) > 0;
+  return JS::SetSize(cx_, unhandled_rejected_promises_) > 0;
 }
 void Engine::report_unhandled_promise_rejections() {
   ::report_unhandled_promise_rejections(this->cx());
 }
 void Engine::clear_unhandled_promise_rejections() {
-  JS::SetClear(CONTEXT, unhandledRejectedPromises);
+  JS::SetClear(cx_, unhandled_rejected_promises_);
 }

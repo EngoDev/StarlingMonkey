@@ -1,5 +1,34 @@
 #include "builtin.h"
 
+#include <memory>
+#include <unordered_map>
+
+namespace builtins {
+namespace {
+using RuntimeProtoMap =
+    std::unordered_map<const JSClass *, std::unique_ptr<JS::PersistentRootedObject>>;
+std::unordered_map<JSRuntime *, RuntimeProtoMap> proto_objs;
+} // namespace
+
+JS::HandleObject builtin_proto(JSContext *cx, const JSClass *cls) {
+  auto runtime_it = proto_objs.find(JS_GetRuntime(cx));
+  MOZ_RELEASE_ASSERT(runtime_it != proto_objs.end());
+  auto proto_it = runtime_it->second.find(cls);
+  MOZ_RELEASE_ASSERT(proto_it != runtime_it->second.end());
+  return *proto_it->second;
+}
+
+bool set_builtin_proto(JSContext *cx, const JSClass *cls, JSObject *proto) {
+  auto rooted = std::make_unique<JS::PersistentRootedObject>();
+  rooted->init(cx, proto);
+  proto_objs[JS_GetRuntime(cx)][cls] = std::move(rooted);
+  return true;
+}
+
+void clear_builtin_protos(JSContext *cx) { proto_objs.erase(JS_GetRuntime(cx)); }
+
+} // namespace builtins
+
 static const JSErrorFormatString *GetErrorMessageFromRef(void *userRef, unsigned errorNumber) {
   auto *error = static_cast<JSErrorFormatString *>(userRef);
 
@@ -7,16 +36,17 @@ static const JSErrorFormatString *GetErrorMessageFromRef(void *userRef, unsigned
   return error;
 }
 
-bool api::throw_error(JSContext* cx, const JSErrorFormatString &error,
-                      const char* arg1, const char* arg2, const char* arg3, const char* arg4) {
-  const char** args = nullptr;
-  const char* list[4] = { arg1, arg2, arg3, arg4 };
+bool api::throw_error(JSContext *cx, const JSErrorFormatString &error, const char *arg1,
+                      const char *arg2, const char *arg3, const char *arg4) {
+  const char **args = nullptr;
+  const char *list[4] = {arg1, arg2, arg3, arg4};
   if (arg1) {
     args = list;
   }
 
   JS_ReportErrorNumberUTF8Array(cx, GetErrorMessageFromRef,
-    const_cast<JSErrorFormatString*>(&error), 0, args);  // NOLINT(cppcoreguidelines-pro-type-const-cast)
+                                const_cast<JSErrorFormatString *>(&error), 0,
+                                args); // NOLINT(cppcoreguidelines-pro-type-const-cast)
   return false;
 }
 

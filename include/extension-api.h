@@ -1,5 +1,6 @@
 #ifndef EXTENSION_API_H
 #define EXTENSION_API_H
+#include <memory>
 #include <vector>
 
 #include "builtin.h"
@@ -23,6 +24,12 @@ using std::optional;
 using PollableHandle = int32_t;
 constexpr PollableHandle INVALID_POLLABLE_HANDLE = -1;
 constexpr PollableHandle IMMEDIATE_TASK_HANDLE = -2;
+
+class ScriptLoader;
+
+namespace core {
+class EventLoop;
+}
 
 namespace api {
 
@@ -70,22 +77,41 @@ struct EngineConfig {
   EngineConfig() = default;
 };
 
-enum class EngineState : uint8_t { Uninitialized, EngineInitializing, ScriptPreInitializing, Initialized, Aborted };
+enum class EngineState : uint8_t {
+  Uninitialized,
+  EngineInitializing,
+  ScriptPreInitializing,
+  Initialized,
+  Aborted
+};
 
 class Engine {
   std::unique_ptr<EngineConfig> config_;
   EngineState state_ = EngineState::Uninitialized;
+  JSContext *cx_ = nullptr;
+  JS::PersistentRootedObject global_;
+  JS::PersistentRootedObject init_script_global_;
+  JS::PersistentRootedObject unhandled_rejected_promises_;
+  JS::PersistentRootedValue script_value_;
+  std::unique_ptr<ScriptLoader> script_loader_;
+  std::unique_ptr<core::EventLoop> event_loop_;
+
+  bool init_js(const EngineConfig &config);
+  bool create_content_global();
+  bool create_initializer_global();
 
 public:
   explicit Engine(std::unique_ptr<EngineConfig> config);
+  ~Engine();
   static Engine *get(JSContext *cx);
 
-  static JSContext *cx();
-  static HandleObject global();
+  JSContext *cx();
+  HandleObject global();
   EngineState state();
   bool debugging_enabled();
   bool wpt_mode();
   const mozilla::Maybe<std::string> &init_location() const;
+  ScriptLoader *script_loader();
 
   void finish_pre_initialization();
 
@@ -127,7 +153,7 @@ public:
   /**
    * Returns the global the initialization script runs in.
    */
-  static HandleObject init_script_global();
+  HandleObject init_script_global();
 
   /**
    * Run the async event loop as long as there's interest registered in keeping it running.
@@ -150,41 +176,41 @@ public:
   /**
    * Add an event loop interest to track
    */
-  static void incr_event_loop_interest();
+  void incr_event_loop_interest();
 
   /**
    * Remove an event loop interest to track
    * The last decrementer marks the event loop as complete to finish
    */
-  static void decr_event_loop_interest();
+  void decr_event_loop_interest();
 
   /**
    * Get the JS value associated with the top-level script execution -
    * the last expression for a script, or the module namespace for a module.
    */
-  static HandleValue script_value();
+  HandleValue script_value();
 
-  static bool has_pending_async_tasks();
-  static void queue_async_task(const RefPtr<AsyncTask>& task);
-  bool cancel_async_task(const RefPtr<AsyncTask>& task);
+  bool has_pending_async_tasks();
+  void queue_async_task(const RefPtr<AsyncTask> &task);
+  bool cancel_async_task(const RefPtr<AsyncTask> &task);
 
-  static bool has_unhandled_promise_rejections();
+  HandleObject unhandled_rejected_promises();
+  bool has_unhandled_promise_rejections();
   void report_unhandled_promise_rejections();
-  static void clear_unhandled_promise_rejections();
+  void clear_unhandled_promise_rejections();
 
   void abort(const char *reason);
 
-  static bool debug_logging_enabled();
+  bool debug_logging_enabled();
 
-  static bool dump_value(JS::Value val, FILE *fp = stdout);
-  static bool print_stack(FILE *fp);
-  static void dump_error(HandleValue error, FILE *fp = stderr);
-  static void dump_pending_exception(const char *description = "", FILE *fp = stderr);
-  static void dump_promise_rejection(HandleValue reason, HandleObject promise, FILE *fp = stderr);
+  bool dump_value(JS::Value val, FILE *fp = stdout);
+  bool print_stack(FILE *fp);
+  void dump_error(HandleValue error, FILE *fp = stderr);
+  void dump_pending_exception(const char *description = "", FILE *fp = stderr);
+  void dump_promise_rejection(HandleValue reason, HandleObject promise, FILE *fp = stderr);
 };
 
-
-using TaskCompletionCallback = bool (*)(JSContext* cx, HandleObject receiver);
+using TaskCompletionCallback = bool (*)(JSContext *cx, HandleObject receiver);
 
 class AsyncTask : public js::RefCounted<AsyncTask>, public mozilla::SupportsWeakPtr {
 protected:
@@ -208,9 +234,7 @@ public:
     return handle_;
   }
 
-  [[nodiscard]] virtual uint64_t deadline() {
-    return 0;
-  }
+  [[nodiscard]] virtual uint64_t deadline() { return 0; }
 
   virtual void trace(JSTracer *trc) = 0;
 

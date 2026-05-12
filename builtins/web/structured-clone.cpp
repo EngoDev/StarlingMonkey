@@ -4,14 +4,12 @@
 #include "dom-exception.h"
 #include "mozilla/Assertions.h"
 
-
-
 namespace builtins::web::structured_clone {
 
 // Magic number used in structured cloning as a tag to identify a
 // URLSearchParam.
 #define SCTAG_DOM_URLSEARCHPARAMS (JS_SCTAG_USER_MIN)
-#define SCTAG_DOM_BLOB            (JS_SCTAG_USER_MIN + 1)
+#define SCTAG_DOM_BLOB (JS_SCTAG_USER_MIN + 1)
 
 /**
  * Reads non-JS builtins during structured cloning.
@@ -36,9 +34,9 @@ JSObject *ReadStructuredClone(JSContext *cx, JSStructuredCloneReader *r,
 
   switch (tag) {
   case SCTAG_DOM_URLSEARCHPARAMS: {
-    RootedObject urlSearchParamsInstance(cx,
-                                         JS_NewObjectWithGivenProto(cx, &url::URLSearchParams::class_,
-                                                                    url::URLSearchParams::proto_obj));
+    RootedObject urlSearchParamsInstance(
+        cx, JS_NewObjectWithGivenProto(cx, &url::URLSearchParams::class_,
+                                       url::URLSearchParams::proto_obj(cx)));
     RootedObject params_obj(cx, url::URLSearchParams::create(cx, urlSearchParamsInstance));
     if (!params_obj) {
       return nullptr;
@@ -48,7 +46,6 @@ JSObject *ReadStructuredClone(JSContext *cx, JSStructuredCloneReader *r,
     jsurl::params_init(url::URLSearchParams::get_params(params_obj), &init);
 
     return params_obj;
-
   }
   case SCTAG_DOM_BLOB: {
     JS::RootedString contentType(cx, JS_GetEmptyString(cx));
@@ -87,13 +84,15 @@ bool WriteStructuredClone(JSContext *cx, JSStructuredCloneWriter *w, JS::HandleO
       return false;
     }
   } else {
-    return dom_exception::DOMException::raise(cx, "The object could not be cloned", "DataCloneError");
+    return dom_exception::DOMException::raise(cx, "The object could not be cloned",
+                                              "DataCloneError");
   }
 
   return true;
 }
 
-JSStructuredCloneCallbacks sc_callbacks = {.read=ReadStructuredClone, .write=WriteStructuredClone};
+JSStructuredCloneCallbacks sc_callbacks = {.read = ReadStructuredClone,
+                                           .write = WriteStructuredClone};
 
 /**
  * The `structuredClone` global function
@@ -131,5 +130,3 @@ bool install(api::Engine *engine) {
 }
 
 } // namespace builtins::web::structured_clone
-
-

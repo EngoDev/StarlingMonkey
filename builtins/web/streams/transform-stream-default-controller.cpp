@@ -1,9 +1,9 @@
 #include "js/experimental/TypedData.h" // used in "js/Conversions.h"
 #include "js/Stream.h"
 
+#include "stream-errors.h"
 #include "transform-stream-default-controller.h"
 #include "transform-stream.h"
-#include "stream-errors.h"
 
 #include <cmath>
 
@@ -15,7 +15,6 @@
  */
 // A JS class to use as the underlying sink for native writable streams, used
 // for TransformStream.
-
 
 namespace builtins::web::streams {
 JSObject *TransformStreamDefaultController::stream(JSObject *controller) {
@@ -131,7 +130,7 @@ JSObject *TransformStreamDefaultController::create(
     JSContext *cx, JS::HandleObject stream,
     TransformStreamDefaultController::TransformAlgorithmImplementation *transformAlgo,
     TransformStreamDefaultController::FlushAlgorithmImplementation *flushAlgo) {
-  JS::RootedObject controller(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject controller(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!controller) {
     return nullptr;
   }

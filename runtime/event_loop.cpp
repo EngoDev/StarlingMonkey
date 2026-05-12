@@ -7,29 +7,21 @@
 #include <iostream>
 #include <vector>
 
-struct TaskQueue {
-  std::vector<RefPtr<api::AsyncTask>> tasks;
-  int interest_cnt = 0;
-  bool event_loop_running = false;
-
-  void trace(JSTracer *trc) const {
-    for (const auto &task : tasks) {
-      task->trace(trc);
-    }
-  }
-};
-
-static PersistentRooted<TaskQueue> queue;
-
 namespace core {
 
-void EventLoop::queue_async_task(const RefPtr<api::AsyncTask>& task) {
-  MOZ_ASSERT(task);
-  queue.get().tasks.emplace_back(task);
+void TaskQueue::trace(JSTracer *trc) const {
+  for (const auto &task : tasks) {
+    task->trace(trc);
+  }
 }
 
-bool EventLoop::cancel_async_task(api::Engine *engine, const RefPtr<api::AsyncTask>& task) {
-  auto *const tasks = &queue.get().tasks;
+void EventLoop::queue_async_task(const RefPtr<api::AsyncTask> &task) {
+  MOZ_ASSERT(task);
+  queue_.get().tasks.emplace_back(task);
+}
+
+bool EventLoop::cancel_async_task(api::Engine *engine, const RefPtr<api::AsyncTask> &task) {
+  auto *const tasks = &queue_.get().tasks;
   for (auto it = tasks->begin(); it != tasks->end(); ++it) {
     if (*it == task) {
       tasks->erase(it);
@@ -40,25 +32,25 @@ bool EventLoop::cancel_async_task(api::Engine *engine, const RefPtr<api::AsyncTa
   return false;
 }
 
-bool EventLoop::has_pending_async_tasks() { return !queue.get().tasks.empty(); }
+bool EventLoop::has_pending_async_tasks() const { return !queue_.get().tasks.empty(); }
 
-void EventLoop::incr_event_loop_interest() { queue.get().interest_cnt++; }
+void EventLoop::incr_event_loop_interest() { queue_.get().interest_cnt++; }
 
 void EventLoop::decr_event_loop_interest() {
-  MOZ_ASSERT(queue.get().interest_cnt > 0);
-  queue.get().interest_cnt--;
+  MOZ_ASSERT(queue_.get().interest_cnt > 0);
+  queue_.get().interest_cnt--;
 }
 
-inline bool interest_complete() { return queue.get().interest_cnt == 0; }
+bool EventLoop::interest_complete() const { return queue_.get().interest_cnt == 0; }
 
-inline void exit_event_loop() { queue.get().event_loop_running = false; }
+void EventLoop::exit_event_loop() { queue_.get().event_loop_running = false; }
 
 bool EventLoop::run_event_loop(api::Engine *engine, double total_compute) {
-  if (queue.get().event_loop_running) {
+  if (queue_.get().event_loop_running) {
     fprintf(stderr, "cannot run event loop as it is already running");
     return false;
   }
-  queue.get().event_loop_running = true;
+  queue_.get().event_loop_running = true;
   JSContext *cx = engine->cx();
 
   while (true) {
@@ -75,7 +67,7 @@ bool EventLoop::run_event_loop(api::Engine *engine, double total_compute) {
       return true;
     }
 
-    auto *const tasks = &queue.get().tasks;
+    auto *const tasks = &queue_.get().tasks;
     size_t tasks_size = tasks->size();
     if (tasks_size == 0) {
       exit_event_loop();
@@ -96,6 +88,6 @@ bool EventLoop::run_event_loop(api::Engine *engine, double total_compute) {
   }
 }
 
-void EventLoop::init(JSContext *cx) { queue.init(cx); }
+void EventLoop::init(JSContext *cx) { queue_.init(cx); }
 
 } // namespace core

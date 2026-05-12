@@ -7,8 +7,6 @@
 #include "transform-stream-default-controller.h"
 #include "transform-stream.h"
 
-
-
 namespace builtins::web::streams {
 
 namespace {
@@ -46,8 +44,8 @@ uint8_t *output_buffer(JSObject *self) {
   return (uint8_t *)ptr;
 }
 
-JS::PersistentRooted<JSObject *> transformAlgo;
-JS::PersistentRooted<JSObject *> flushAlgo;
+RuntimePersistentRooted<JSObject *> transformAlgo;
+RuntimePersistentRooted<JSObject *> flushAlgo;
 
 } // namespace
 
@@ -229,7 +227,8 @@ JSObject *create(JSContext *cx, JS::HandleObject stream, Format format) {
   // this's transform with _transformAlgorithm_ set to _transformAlgorithm_ and
   // _flushAlgorithm_ set to _flushAlgorithm_.
   JS::RootedObject transform(cx, TransformStream::create(cx, 1, nullptr, 0, nullptr, stream_val,
-                                                         nullptr, transformAlgo, flushAlgo));
+                                                         nullptr, transformAlgo.rooted(cx),
+                                                         flushAlgo.rooted(cx)));
   if (!transform) {
     return nullptr;
   }
@@ -333,5 +332,3 @@ bool CompressionStream::init_class(JSContext *cx, JS::HandleObject global) {
 }
 
 } // namespace builtins::web::streams
-
-

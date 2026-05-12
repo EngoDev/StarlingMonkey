@@ -6,28 +6,43 @@
 #include <js/CompileOptions.h>
 #include <js/Modules.h>
 #include <js/SourceText.h>
+#include <memory>
 
 class ScriptLoader {
+  api::Engine *engine_;
+  bool module_mode_ = true;
+  std::string base_path_;
+  JS::PersistentRootedObject module_registry_;
+  JS::PersistentRootedObject builtin_modules_;
+  std::unique_ptr<JS::CompileOptions> compile_opts_;
+  mozilla::Maybe<std::string> path_prefix_;
+
 public:
   ScriptLoader(api::Engine *engine, JS::CompileOptions *opts,
                mozilla::Maybe<std::string> path_prefix);
 
-  ScriptLoader(const ScriptLoader &) = default;
+  ScriptLoader(const ScriptLoader &) = delete;
   ScriptLoader(ScriptLoader &&) = delete;
 
-  ScriptLoader &operator=(const ScriptLoader &) = default;
+  ScriptLoader &operator=(const ScriptLoader &) = delete;
   ScriptLoader &operator=(ScriptLoader &&) = delete;
 
-  ~ScriptLoader();
+  ~ScriptLoader() = default;
 
-  static bool define_builtin_module(const char* id, HandleValue builtin);
-  static void enable_module_mode(bool enable);
+  api::Engine *engine() const;
+  HandleObject module_registry();
+  HandleObject builtin_modules();
+  const JS::CompileOptions &compile_options() const;
+  const mozilla::Maybe<std::string> &path_prefix() const;
 
-  static bool eval_top_level_script(std::string_view path, JS::SourceText<mozilla::Utf8Unit> &source,
-                                    MutableHandleValue result, MutableHandleValue tla_promise);
+  bool define_builtin_module(const char *id, HandleValue builtin);
+  void enable_module_mode(bool enable);
 
-    static bool load_script(JSContext *cx, std::string_view script_path,
-                          JS::SourceText<mozilla::Utf8Unit> &script);
+  bool eval_top_level_script(std::string_view path, JS::SourceText<mozilla::Utf8Unit> &source,
+                             MutableHandleValue result, MutableHandleValue tla_promise);
+
+  bool load_script(JSContext *cx, std::string_view script_path,
+                   JS::SourceText<mozilla::Utf8Unit> &script);
 
   /**
    * Load a script without attempting to resolve its path relative to a base path.
@@ -35,9 +50,9 @@ public:
    * This is useful for loading ancillary scripts without interfering with, or depending on,
    * the script loader's state as determined by loading and running content scripts.
    */
-  static bool load_resolved_script(JSContext *cx, std::string_view specifier,
-                                   std::string_view resolved_path,
-                                   JS::SourceText<mozilla::Utf8Unit> &script);
+  bool load_resolved_script(JSContext *cx, std::string_view specifier,
+                            std::string_view resolved_path,
+                            JS::SourceText<mozilla::Utf8Unit> &script);
 };
 
-#endif //SCRIPTLOADER_H
+#endif // SCRIPTLOADER_H

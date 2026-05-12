@@ -9,7 +9,6 @@
 // A JS class to use as the underlying source for native readable streams, used
 // for Request/Response bodies and TransformStream.
 
-
 namespace builtins::web::streams {
 
 JSObject *NativeStreamSource::owner(JSObject *self) {
@@ -143,21 +142,18 @@ const JSPropertySpec NativeStreamSource::static_properties[] = {
     JS_PS_END,
 };
 
-const JSFunctionSpec NativeStreamSource::methods[] = {
-    JS_FN("start", start, 1, 0),
-    JS_FN("pull", pull, 1, 0),
-    JS_FN("cancel", cancel, 1, 0),
-    JS_FS_END
-};
+const JSFunctionSpec NativeStreamSource::methods[] = {JS_FN("start", start, 1, 0),
+                                                      JS_FN("pull", pull, 1, 0),
+                                                      JS_FN("cancel", cancel, 1, 0), JS_FS_END};
 
-const JSPropertySpec NativeStreamSource::properties[] = {
-    JS_PS_END
-};
+const JSPropertySpec NativeStreamSource::properties[] = {JS_PS_END};
 
-JSObject *NativeStreamSource::create(JSContext *cx, JS::HandleObject owner, JS::HandleValue startPromise,
-                                     PullAlgorithmImplementation *pull, CancelAlgorithmImplementation *cancel,
-                                     JS::HandleFunction size, double highWaterMark) {
-  JS::RootedObject source(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+JSObject *NativeStreamSource::create(JSContext *cx, JS::HandleObject owner,
+                                     JS::HandleValue startPromise,
+                                     PullAlgorithmImplementation *pull,
+                                     CancelAlgorithmImplementation *cancel, JS::HandleFunction size,
+                                     double highWaterMark) {
+  JS::RootedObject source(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!source) {
     return nullptr;
   }
@@ -178,5 +174,3 @@ JSObject *NativeStreamSource::create(JSContext *cx, JS::HandleObject owner, JS::
   return source;
 }
 } // namespace builtins::web::streams
-
-

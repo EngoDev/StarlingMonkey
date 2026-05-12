@@ -1,7 +1,5 @@
 #include "custom-event.h"
 
-
-
 namespace builtins::web::event {
 
 const JSFunctionSpec CustomEvent::static_methods[] = {
@@ -25,7 +23,7 @@ const JSPropertySpec CustomEvent::properties[] = {
 bool CustomEvent::detail_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "name get", "CustomEvent");
   }
 
@@ -65,9 +63,7 @@ bool CustomEvent::constructor(JSContext *cx, unsigned argc, JS::Value *vp) {
 
 bool CustomEvent::init_class(JSContext *cx, JS::HandleObject global) {
   Event::register_subclass(&class_);
-  return init_class_impl(cx, global, Event::proto_obj);
+  return init_class_impl(cx, global, Event::proto_obj(cx));
 }
 
 } // namespace builtins::web::event
-
-

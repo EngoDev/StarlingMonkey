@@ -69,19 +69,18 @@ public:
    * @return True if the response was sent successfully
    * @throws None directly, but surfaces errors to JS via `HANDLE_ERROR`
    */
-  static bool respondWithError(JSContext *cx, 
-                               JS::HandleObject self, 
+  static bool respondWithError(JSContext *cx, JS::HandleObject self,
                                std::optional<std::string_view> body_text = std::nullopt);
   static bool is_active(JSObject *self);
 
   static State state(JSObject *self);
-  static void set_state(JSObject *self, State state);
+  static void set_state(JSContext *cx, JSObject *self, State state);
   static bool response_started(JSObject *self);
 
-  static JS::HandleObject instance();
+  static JS::HandleObject instance(JSContext *cx);
 
-  static void increase_interest();
-  static void decrease_interest();
+  static void increase_interest(JSContext *cx);
+  static void decrease_interest(JSContext *cx);
 
   static bool init_class(JSContext *cx, HandleObject global);
 };

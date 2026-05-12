@@ -2,15 +2,15 @@
 
 #include "../abort/abort-signal.h"
 #include "../blob.h"
-#include "../form-data/form-data.h"
 #include "../form-data/form-data-encoder.h"
 #include "../form-data/form-data-parser.h"
+#include "../form-data/form-data.h"
 #include "../streams/native-stream-source.h"
 #include "../streams/transform-stream.h"
 #include "../url.h"
-#include "fetch-utils.h"
 #include "encode.h"
 #include "extension-api.h"
+#include "fetch-utils.h"
 #include "fetch_event.h"
 #include "host_api.h"
 #include "js/String.h"
@@ -19,9 +19,9 @@
 #include "js/Array.h"
 #include "js/ArrayBuffer.h"
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"
 #include "js/JSON.h"
 #include "js/Stream.h"
-#include "js/experimental/TypedData.h"
 #include "mozilla/ResultVariant.h"
 
 #include "../worker-location.h"
@@ -45,8 +45,6 @@ using form_data::FormDataParser;
 using form_data::MultipartFormData;
 
 using namespace std::literals;
-
-static api::Engine *ENGINE;
 
 bool error_stream_controller_with_pending_exception(JSContext *cx, HandleObject stream) {
   RootedValue exn(cx);
@@ -199,17 +197,17 @@ bool RequestOrResponse::has_body(JSObject *obj) {
 host_api::HttpIncomingBody *RequestOrResponse::incoming_body_handle(JSObject *obj) {
   MOZ_ASSERT(is_incoming(obj));
   auto *handle = RequestOrResponse::handle(obj);
-  return handle->is_request() ?
-    reinterpret_cast<host_api::HttpIncomingRequest *>(handle)->body().unwrap() :
-    reinterpret_cast<host_api::HttpIncomingResponse *>(handle)->body().unwrap();
+  return handle->is_request()
+             ? reinterpret_cast<host_api::HttpIncomingRequest *>(handle)->body().unwrap()
+             : reinterpret_cast<host_api::HttpIncomingResponse *>(handle)->body().unwrap();
 }
 
 host_api::HttpOutgoingBody *RequestOrResponse::outgoing_body_handle(JSObject *obj) {
   MOZ_ASSERT(!is_incoming(obj));
   auto *handle = RequestOrResponse::handle(obj);
-  return handle->is_request() ?
-    reinterpret_cast<host_api::HttpOutgoingRequest *>(handle)->body().unwrap() :
-    reinterpret_cast<host_api::HttpOutgoingResponse *>(handle)->body().unwrap();
+  return handle->is_request()
+             ? reinterpret_cast<host_api::HttpOutgoingRequest *>(handle)->body().unwrap()
+             : reinterpret_cast<host_api::HttpOutgoingResponse *>(handle)->body().unwrap();
 }
 
 JSObject *RequestOrResponse::body_stream(JSObject *obj) {
@@ -359,7 +357,8 @@ bool RequestOrResponse::extract_body(JSContext *cx, JS::HandleObject self,
     content_type = host_type_str;
 
     RootedValue stream_val(cx, JS::ObjectValue(*stream));
-    JS_SetReservedSlot(self, static_cast<uint32_t>(RequestOrResponse::Slots::BodyStream), stream_val);
+    JS_SetReservedSlot(self, static_cast<uint32_t>(RequestOrResponse::Slots::BodyStream),
+                       stream_val);
   } else if (body_obj && JS::IsReadableStream(body_obj)) {
     if (RequestOrResponse::body_unusable(cx, body_obj)) {
       return api::throw_error(cx, FetchErrors::BodyStreamUnusable);
@@ -513,7 +512,7 @@ bool finish_outgoing_body_streaming(JSContext *cx, HandleObject body_owner) {
   // right state: `respondedWithError` is for when sending a response at all failed.)
   // TODO(TS): factor this out to remove dependency on fetch-event.h
   if (!body_owner || Response::is_instance(body_owner)) {
-    fetch_event::FetchEvent::set_state(fetch_event::FetchEvent::instance(),
+    fetch_event::FetchEvent::set_state(cx, fetch_event::FetchEvent::instance(cx),
                                        fetch_event::FetchEvent::State::responseDone);
     return true;
   }
@@ -531,19 +530,20 @@ bool finish_outgoing_body_streaming(JSContext *cx, HandleObject body_owner) {
             .toPrivate());
     SetReservedSlot(body_owner, static_cast<uint32_t>(Request::Slots::PendingResponseHandle),
                     PrivateValue(nullptr));
-    ENGINE->queue_async_task(js_new<ResponseFutureTask>(body_owner, pending_handle));
+    api::Engine::get(cx)->queue_async_task(js_new<ResponseFutureTask>(body_owner, pending_handle));
   }
 
   return true;
 }
 
 bool RequestOrResponse::append_body(JSContext *cx, JS::HandleObject self, JS::HandleObject source,
-  api::TaskCompletionCallback callback, HandleObject callback_receiver) {
+                                    api::TaskCompletionCallback callback,
+                                    HandleObject callback_receiver) {
   MOZ_ASSERT(!body_used(source));
   MOZ_ASSERT(self != source);
   host_api::HttpIncomingBody *source_body = incoming_body_handle(source);
   host_api::HttpOutgoingBody *dest_body = outgoing_body_handle(self);
-  auto res = dest_body->append(ENGINE, source_body, callback, callback_receiver);
+  auto res = dest_body->append(api::Engine::get(cx), source_body, callback, callback_receiver);
   if (const auto *err = res.to_err()) {
     HANDLE_ERROR(cx, *err);
     return false;
@@ -618,7 +618,7 @@ bool RequestOrResponse::parse_body(JSContext *cx, JS::HandleObject self, JS::Uni
     result.setObject(*blob);
 
   } else if constexpr (result_type == RequestOrResponse::BodyReadResult::FormData) {
-    auto throw_invalid_header = [&] () {
+    auto throw_invalid_header = [&]() {
       api::throw_error(cx, FetchErrors::InvalidFormDataHeader);
       return RejectPromiseWithPendingError(cx, result_promise);
     };
@@ -816,7 +816,7 @@ bool RequestOrResponse::content_stream_read_then_handler(JSContext *cx, JS::Hand
   JS::RootedObject promise(cx, JS::ReadableStreamDefaultReaderRead(cx, reader));
   if (!promise) {
     return false;
-}
+  }
   return JS::AddPromiseReactions(cx, promise, then_handler, catch_handler);
 }
 
@@ -997,7 +997,8 @@ bool do_body_source_pull(JSContext *cx, HandleObject source, HandleObject body_o
     MOZ_ASSERT(!streams::TransformStream::backpressure(pipe_dest));
     RootedObject dest_owner(cx, streams::TransformStream::owner(pipe_dest));
     MOZ_ASSERT(!JS_IsExceptionPending(cx));
-    if (!RequestOrResponse::append_body(cx, dest_owner, body_owner, close_appended_body, body_owner)) {
+    if (!RequestOrResponse::append_body(cx, dest_owner, body_owner, close_appended_body,
+                                        body_owner)) {
       return false;
     }
 
@@ -1005,7 +1006,7 @@ bool do_body_source_pull(JSContext *cx, HandleObject source, HandleObject body_o
     return true;
   }
 
-  ENGINE->queue_async_task(js_new<BodyFutureTask>(source));
+  api::Engine::get(cx)->queue_async_task(js_new<BodyFutureTask>(source));
   return true;
 }
 
@@ -1101,7 +1102,7 @@ bool reader_for_outgoing_body_then_handler(JSContext *cx, JS::HandleObject body_
   // The read operation returned something that's not a Uint8Array, or an array whose buffer has
   // been detached.
   if (!val.isObject() || !JS_IsUint8Array(&val.toObject()) ||
-    JS::ArrayBufferView::fromObject(&val.toObject()).isDetached()) {
+      JS::ArrayBufferView::fromObject(&val.toObject()).isDetached()) {
     // Close the body stream, since we're not going to send anything to it anymore.
     body->close();
 
@@ -1117,7 +1118,7 @@ bool reader_for_outgoing_body_then_handler(JSContext *cx, JS::HandleObject body_
     // Uint8Array?
     fprintf(stderr, "Error: read operation on body ReadableStream didn't respond with a "
                     "Uint8Array. Received value: ");
-    ENGINE->dump_value(val, stderr);
+    api::Engine::get(cx)->dump_value(val, stderr);
     return false;
   }
 
@@ -1159,8 +1160,8 @@ bool reader_for_outgoing_body_then_handler(JSContext *cx, JS::HandleObject body_
     bytes = host_api::HostBytes(unique_ptr<uint8_t[]>(ptr), length);
   }
 
-  auto res = body->write_all(ENGINE, std::move(bytes),
-    write_all_finish_callback, then_handler);
+  auto res = body->write_all(api::Engine::get(cx), std::move(bytes), write_all_finish_callback,
+                             then_handler);
   if (const auto *err = res.to_err()) {
     HANDLE_ERROR(cx, *err);
     return false;
@@ -1171,14 +1172,14 @@ bool reader_for_outgoing_body_then_handler(JSContext *cx, JS::HandleObject body_
 
 bool reader_for_outgoing_body_catch_handler(JSContext *cx, JS::HandleObject body_owner,
                                             JS::HandleValue extra, JS::CallArgs args) {
-  fetch_event::FetchEvent::decrease_interest();
+  fetch_event::FetchEvent::decrease_interest(cx);
 
   // TODO: check if this should create a rejected promise instead, so an
   // in-content handler for unhandled rejections could deal with it. The body
   // stream errored during the streaming send. Not much we can do, but at least
   // close the stream, and warn.
   fprintf(stderr, "Warning: body ReadableStream closed during body streaming. Exception: ");
-  ENGINE->dump_value(args.get(0), stderr);
+  api::Engine::get(cx)->dump_value(args.get(0), stderr);
 
   return finish_outgoing_body_streaming(cx, body_owner);
 }
@@ -1197,7 +1198,8 @@ bool RequestOrResponse::maybe_stream_body(JSContext *cx, JS::HandleObject body_o
   if (is_incoming(body_owner)) {
     auto *source_body = incoming_body_handle(body_owner);
     auto *dest_body = destination->body().unwrap();
-    auto res = dest_body->append(ENGINE, source_body, finish_outgoing_body_streaming, nullptr);
+    auto res = dest_body->append(api::Engine::get(cx), source_body, finish_outgoing_body_streaming,
+                                 nullptr);
     if (const auto *err = res.to_err()) {
       HANDLE_ERROR(cx, *err);
       return false;
@@ -1479,7 +1481,8 @@ const JSFunctionSpec Request::methods[] = {
     JS_FN("arrayBuffer", Request::bodyAll<RequestOrResponse::BodyReadResult::ArrayBuffer>, 0,
           JSPROP_ENUMERATE),
     JS_FN("blob", Request::bodyAll<RequestOrResponse::BodyReadResult::Blob>, 0, JSPROP_ENUMERATE),
-    JS_FN("formData", Request::bodyAll<RequestOrResponse::BodyReadResult::FormData>, 0, JSPROP_ENUMERATE),
+    JS_FN("formData", Request::bodyAll<RequestOrResponse::BodyReadResult::FormData>, 0,
+          JSPROP_ENUMERATE),
     JS_FN("json", Request::bodyAll<RequestOrResponse::BodyReadResult::JSON>, 0, JSPROP_ENUMERATE),
     JS_FN("text", Request::bodyAll<RequestOrResponse::BodyReadResult::Text>, 0, JSPROP_ENUMERATE),
     JS_FN("clone", Request::clone, 0, JSPROP_ENUMERATE),
@@ -1513,7 +1516,8 @@ void Request::init_slots(JSObject *requestInstance) {
                       JS::PrivateValue(nullptr));
   JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::Headers), JS::NullValue());
   JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::BodyStream), JS::NullValue());
-  JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::BodyAllPromise), JS::NullValue());
+  JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::BodyAllPromise),
+                      JS::NullValue());
   JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::Signal), JS::NullValue());
   JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::HasBody), JS::FalseValue());
   JS::SetReservedSlot(requestInstance, static_cast<uint32_t>(Slots::BodyUsed), JS::FalseValue());
@@ -1611,13 +1615,14 @@ bool Request::initialize(JSContext *cx, JS::HandleObject request, JS::HandleValu
   else {
     // 1.  Let `parsedURL` be the result of parsing `input` with `baseURL`.
     JS::RootedObject url_instance(
-        cx, JS_NewObjectWithGivenProto(cx, &url::URL::class_, url::URL::proto_obj));
+        cx, JS_NewObjectWithGivenProto(cx, &url::URL::class_, url::URL::proto_obj(cx)));
     if (!url_instance) {
       return false;
     }
 
     JS::RootedObject parsedURL(
-        cx, url::URL::create(cx, url_instance, input, worker_location::WorkerLocation::url));
+        cx,
+        url::URL::create(cx, url_instance, input, worker_location::WorkerLocation::url.rooted(cx)));
 
     // 2.  If `parsedURL` is failure, then throw a `TypeError`.
     if (!parsedURL) {
@@ -1794,8 +1799,9 @@ bool Request::initialize(JSContext *cx, JS::HandleObject request, JS::HandleValu
   JS::RootedValueVector signals(cx);
   if (signal_obj) {
     auto res = signals.append(JS::ObjectValue(*signal_obj));
-    if (!res) { return false;
-}
+    if (!res) {
+      return false;
+    }
   }
 
   // 30. Set this's signal to the result of creating a dependent abort signal from signals,
@@ -1932,7 +1938,7 @@ bool Request::initialize(JSContext *cx, JS::HandleObject request, JS::HandleValu
       // into a TransformStream, we just append the body on the host side and
       // mark it as used on the input Request.
       if (!RequestOrResponse::append_body(cx, request, input_request,
-                                          finish_outgoing_body_streaming,request)) {
+                                          finish_outgoing_body_streaming, request)) {
         return false;
       }
     } else {
@@ -1957,7 +1963,7 @@ bool Request::initialize(JSContext *cx, JS::HandleObject request, JS::HandleValu
 
 JSObject *Request::create(JSContext *cx) {
   JS::RootedObject requestInstance(
-      cx, JS_NewObjectWithGivenProto(cx, &Request::class_, Request::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &Request::class_, Request::proto_obj(cx)));
   return requestInstance;
 }
 
@@ -2258,18 +2264,30 @@ JSString *type_opaque_redirect_atom;
 bool Response::type_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0)
 
-  auto ty = static_cast<Type>(
-      JS::GetReservedSlot(self, static_cast<size_t>(Slots::Type)).toInt32());
+  auto ty =
+      static_cast<Type>(JS::GetReservedSlot(self, static_cast<size_t>(Slots::Type)).toInt32());
 
   JSString *type_str = nullptr;
 
-  switch(ty) {
-  case Type::Basic: type_str = type_basic_atom; break;
-  case Type::Cors: type_str = type_cors_atom; break;
-  case Type::Default: type_str = type_default_atom; break;
-  case Type::Error: type_str = type_error_atom; break;
-  case Type::Opaque: type_str = type_opaque_atom; break;
-  case Type::OpaqueRedirect: type_str = type_opaque_redirect_atom; break;
+  switch (ty) {
+  case Type::Basic:
+    type_str = type_basic_atom;
+    break;
+  case Type::Cors:
+    type_str = type_cors_atom;
+    break;
+  case Type::Default:
+    type_str = type_default_atom;
+    break;
+  case Type::Error:
+    type_str = type_error_atom;
+    break;
+  case Type::Opaque:
+    type_str = type_opaque_atom;
+    break;
+  case Type::OpaqueRedirect:
+    type_str = type_opaque_redirect_atom;
+    break;
   }
 
   args.rval().setString(status(self) == 0 ? type_error_atom : type_str);
@@ -2346,7 +2364,8 @@ bool Response::redirect(JSContext *cx, unsigned argc, Value *vp) {
 
   auto deleter = [&](auto *url) { jsurl::free_jsurl(url); };
   std::unique_ptr<jsurl::JSUrl, decltype(deleter)> parsedURL(
-      new_jsurl_with_base(&url_str, url::URL::url(worker_location::WorkerLocation::url)), deleter);
+      new_jsurl_with_base(&url_str, url::URL::url(worker_location::WorkerLocation::url.rooted(cx))),
+      deleter);
 
   if (!parsedURL) {
     return api::throw_error(cx, api::Errors::TypeError, "Response.redirect", "url",
@@ -2403,13 +2422,12 @@ struct JsonCallback {
   bool called = false;
 
   static bool write_to_buffer(const char16_t *str, uint32_t strlen, void *data) {
-    auto *callback = static_cast<JsonCallback*>(data);
+    auto *callback = static_cast<JsonCallback *>(data);
     callback->called = true;
     callback->output.append(str, strlen);
     return true;
   }
 };
-
 
 bool Response::json(JSContext *cx, unsigned argc, JS::Value *vp) {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
@@ -2428,7 +2446,8 @@ bool Response::json(JSContext *cx, unsigned argc, JS::Value *vp) {
   }
   if (!json_callback.called) {
     // undefined never invokes the callback, so we throw an error
-    return api::throw_error(cx, api::Errors::TypeError, "Response.json", "data", "be a valid JSON value");
+    return api::throw_error(cx, api::Errors::TypeError, "Response.json", "data",
+                            "be a valid JSON value");
   }
   // 2. Parse init object to get status, statusText, and headers
   JS::RootedValue status_val(cx);
@@ -2455,7 +2474,8 @@ bool Response::json(JSContext *cx, unsigned argc, JS::Value *vp) {
       return api::throw_error(cx, FetchErrors::NonBodyResponseWithBody, status_str.c_str());
     }
 
-    if (!statusText_val.isUndefined() && ((statusText = JS::ToString(cx, statusText_val)) == nullptr)) {
+    if (!statusText_val.isUndefined() &&
+        ((statusText = JS::ToString(cx, statusText_val)) == nullptr)) {
       return false;
     }
 
@@ -2463,15 +2483,15 @@ bool Response::json(JSContext *cx, unsigned argc, JS::Value *vp) {
     return api::throw_error(cx, FetchErrors::InvalidInitArg, "Response.json");
   }
 
-
-   // 3. Create the Response JS object first
+  // 3. Create the Response JS object first
   JS::RootedObject response_obj(cx, Response::create(cx));
   if (response_obj == nullptr) {
     return false;
   }
 
   // Convert JSON string to a proper body value
-  JS::RootedString json_string(cx, JS_NewUCStringCopyN(cx, json_callback.output.c_str(), json_callback.output.length()));
+  JS::RootedString json_string(
+      cx, JS_NewUCStringCopyN(cx, json_callback.output.c_str(), json_callback.output.length()));
   if (json_string == nullptr) {
     return false;
   }
@@ -2524,7 +2544,6 @@ bool Response::json(JSContext *cx, unsigned argc, JS::Value *vp) {
   args.rval().setObject(*response_obj);
   return true;
 }
-
 
 const JSFunctionSpec Response::static_methods[] = {
     JS_FN("redirect", redirect, 1, JSPROP_ENUMERATE),
@@ -2581,7 +2600,8 @@ bool Response::initialize(JSContext *cx, JS::HandleObject response, JS::HandleVa
       return false;
     }
 
-    if (!statusText_val.isUndefined() && ((statusText = JS::ToString(cx, statusText_val)) == nullptr)) {
+    if (!statusText_val.isUndefined() &&
+        ((statusText = JS::ToString(cx, statusText_val)) == nullptr)) {
       return false;
     }
 
@@ -2705,7 +2725,7 @@ bool Response::init_class(JSContext *cx, JS::HandleObject global) {
 }
 
 JSObject *Response::create(JSContext *cx) {
-  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -2774,12 +2794,13 @@ struct ResponseAborter : abort::AbortAlgorithm {
   }
 };
 
-ResponseFutureTask::ResponseFutureTask(const HandleObject request, host_api::FutureHttpIncomingResponse *future)
-      : request_(request), future_(future) {
-    auto res = future->subscribe();
+ResponseFutureTask::ResponseFutureTask(const HandleObject request,
+                                       host_api::FutureHttpIncomingResponse *future)
+    : request_(request), future_(future) {
+  auto res = future->subscribe();
 
-    MOZ_ASSERT(!res.is_err(), "Subscribing to a future should never fail");
-    handle_ = res.unwrap();
+  MOZ_ASSERT(!res.is_err(), "Subscribing to a future should never fail");
+  handle_ = res.unwrap();
 }
 
 bool ResponseFutureTask::run(api::Engine *engine) {
@@ -2796,7 +2817,7 @@ bool ResponseFutureTask::run(api::Engine *engine) {
   }
 
   auto maybe_response = res.unwrap();
-  if(!maybe_response.has_value()) {
+  if (!maybe_response.has_value()) {
     return cancel(engine);
   }
 
@@ -2845,8 +2866,6 @@ bool ResponseFutureTask::abort(api::Engine *engine) {
 namespace request_response {
 
 bool install(api::Engine *engine) {
-  ENGINE = engine;
-
   if (!Request::init_class(engine->cx(), engine->global())) {
     return false;
   }

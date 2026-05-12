@@ -4,15 +4,13 @@
 
 #include "text-codec-errors.h"
 
-
-
 namespace builtins::web::text_codec {
 
 bool TextDecoder::decode(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "decode", "TextDecoder");
   }
 
@@ -42,8 +40,8 @@ bool TextDecoder::decode(JSContext *cx, unsigned argc, JS::Value *vp) {
   if (args.hasDefined(1)) {
     auto options_value = args.get(1);
     if (!options_value.isObject()) {
-      return api::throw_error(cx, api::Errors::TypeError, "TextDecoder.decode",
-        "options", "be an object or undefined");
+      return api::throw_error(cx, api::Errors::TypeError, "TextDecoder.decode", "options",
+                              "be an object or undefined");
     }
     JS::RootedObject options(cx, &options_value.toObject());
     JS::RootedValue stream_value(cx);
@@ -77,8 +75,8 @@ bool TextDecoder::decode(JSContext *cx, unsigned argc, JS::Value *vp) {
     }
   } else {
     bool hadReplacements = false;
-    result = jsencoding::decoder_decode_to_utf16(decoder, src_ptr, &srcLen, dest.get(),
-                                                 &destLen, !stream, &hadReplacements);
+    result = jsencoding::decoder_decode_to_utf16(decoder, src_ptr, &srcLen, dest.get(), &destLen,
+                                                 !stream, &hadReplacements);
   }
   MOZ_ASSERT(result == 0);
 
@@ -108,7 +106,7 @@ bool TextDecoder::decode(JSContext *cx, unsigned argc, JS::Value *vp) {
 bool TextDecoder::encoding_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "encoding get", "TextDecoder");
   }
 
@@ -140,7 +138,7 @@ bool TextDecoder::fatal_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "fatal get", "TextDecoder");
   }
 
@@ -155,7 +153,7 @@ bool TextDecoder::ignoreBOM_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "ignoreBOM get", "TextDecoder");
   }
 
@@ -230,8 +228,8 @@ bool TextDecoder::constructor(JSContext *cx, unsigned argc, JS::Value *vp) {
       }
       ignoreBOM = JS::ToBoolean(ignoreBOM_value);
     } else if (!options_val.isNull()) {
-      return api::throw_error(cx, api::Errors::TypeError, "TextDecoder constructor",
-        "options", "be an object or undefined");
+      return api::throw_error(cx, api::Errors::TypeError, "TextDecoder constructor", "options",
+                              "be an object or undefined");
     }
   }
   JS::RootedObject self(cx, JS_NewObjectForConstructor(cx, &class_, args));
@@ -272,5 +270,3 @@ void TextDecoder::finalize(JS::GCContext *gcx, JSObject *self) {
 }
 
 } // namespace builtins::web::text_codec
-
-

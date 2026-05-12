@@ -4,8 +4,6 @@
 #include "builtin.h"
 #include "host_api.h"
 
-
-
 namespace builtins::web::fetch {
 
 class Headers final : public BuiltinImpl<Headers, FinalizableClassPolicy> {
@@ -178,7 +176,5 @@ public:
 };
 
 } // namespace builtins::web::fetch
-
-
 
 #endif

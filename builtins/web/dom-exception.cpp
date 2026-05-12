@@ -8,7 +8,7 @@ namespace builtins::web::dom_exception {
 bool DOMException::name_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "name get", "DOMException");
   }
   args.rval().setString(JS::GetReservedSlot(self, Slots::Name).toString());
@@ -18,7 +18,7 @@ bool DOMException::name_get(JSContext *cx, unsigned argc, JS::Value *vp) {
 bool DOMException::message_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "message get", "DOMException");
   }
   args.rval().setString(JS::GetReservedSlot(self, Slots::Message).toString());
@@ -28,7 +28,7 @@ bool DOMException::message_get(JSContext *cx, unsigned argc, JS::Value *vp) {
 bool DOMException::code_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
   // TODO: Change this class so that its prototype isn't an instance of the class
-  if (self == proto_obj) {
+  if (self == proto_obj(cx)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "code get", "DOMException");
   }
   JS::RootedString name_string(cx, JS::GetReservedSlot(self, Slots::Name).toString());
@@ -160,7 +160,7 @@ JSObject *DOMException::create(JSContext *cx, std::string_view message, std::str
   args[0].setString(JS_NewStringCopyN(cx, message.data(), message.size()));
   args[1].setString(JS_NewStringCopyN(cx, name.data(), name.size()));
   JS::RootedObject instance(cx);
-  JS::RootedObject ctorObj(cx, JS_GetConstructor(cx, proto_obj));
+  JS::RootedObject ctorObj(cx, JS_GetConstructor(cx, proto_obj(cx)));
   JS::RootedValue ctor(cx, JS::ObjectValue(*ctorObj));
   if (!JS::Construct(cx, ctor, args, &instance)) {
     return nullptr;

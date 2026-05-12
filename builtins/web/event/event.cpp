@@ -1,6 +1,6 @@
 #include "event.h"
-#include "event-target.h"
 #include "custom-event.h"
+#include "event-target.h"
 #include "global-event-target.h"
 
 namespace {
@@ -15,8 +15,8 @@ void set_event_flag(uint32_t *flags, Event::EventFlag flag, bool val) {
   }
 }
 
-bool read_event_init(JSContext *cx, HandleValue initv,
-                     bool *bubbles, bool *cancelable, bool *composed) {
+bool read_event_init(JSContext *cx, HandleValue initv, bool *bubbles, bool *cancelable,
+                     bool *composed) {
   // Type checked upstream
   MOZ_ASSERT(initv.isObject());
 
@@ -42,8 +42,6 @@ bool read_event_init(JSContext *cx, HandleValue initv,
 }
 
 } // namespace
-
-
 
 namespace builtins::web::event {
 
@@ -85,12 +83,12 @@ const JSPropertySpec Event::properties[] = {
     JS_PS_END,
 };
 
-#define DEFINE_EVENT_GETTER(fn, setter, expr, ...)                 \
-bool Event::fn(JSContext *cx, unsigned argc, JS::Value *vp) {      \
-  METHOD_HEADER(0);                                                \
-  args.rval().setter(expr(self __VA_OPT__(,) __VA_ARGS__));        \
-  return true;                                                     \
-}
+#define DEFINE_EVENT_GETTER(fn, setter, expr, ...)                                                 \
+  bool Event::fn(JSContext *cx, unsigned argc, JS::Value *vp) {                                    \
+    METHOD_HEADER(0);                                                                              \
+    args.rval().setter(expr(self __VA_OPT__(, ) __VA_ARGS__));                                     \
+    return true;                                                                                   \
+  }
 
 DEFINE_EVENT_GETTER(type_get, setString, type)
 DEFINE_EVENT_GETTER(target_get, setObjectOrNull, target)
@@ -178,13 +176,13 @@ JSObject *Event::related_target(JSObject *self) {
   return JS::GetReservedSlot(self, Slots::RelatedTarget).toObjectOrNull();
 }
 
-bool Event::has_flag(JSObject* self, EventFlag flag) {
+bool Event::has_flag(JSObject *self, EventFlag flag) {
   MOZ_ASSERT(is_instance(self));
   auto flags = JS::GetReservedSlot(self, Slots::Flags).toInt32();
   return (flags & static_cast<uint32_t>(flag)) != 0;
 }
 
-bool Event::set_flag(JSObject* self, EventFlag flag, bool val) {
+bool Event::set_flag(JSObject *self, EventFlag flag, bool val) {
   MOZ_ASSERT(is_instance(self));
   auto flags = static_cast<uint32_t>(JS::GetReservedSlot(self, Slots::Flags).toInt32());
 
@@ -230,16 +228,14 @@ void Event::set_canceled(JSObject *self, bool val) {
   // To set the canceled flag, given an event event, if event's cancelable
   // attribute value is true and event's in passive listener flag is unset,
   // then set event's canceled flag, and do nothing otherwise.
-  auto canceled = val
-    && has_flag(self, EventFlag::Cancelable)
-    && !has_flag(self, EventFlag::InPassiveListener);
+  auto canceled =
+      val && has_flag(self, EventFlag::Cancelable) && !has_flag(self, EventFlag::InPassiveListener);
 
   set_flag(self, EventFlag::Canceled, canceled);
 }
 
 // https://dom.spec.whatwg.org/#inner-event-creation-steps
-bool Event::init(JSContext *cx, HandleObject self, HandleValue type, HandleValue init)
-{
+bool Event::init(JSContext *cx, HandleObject self, HandleValue type, HandleValue init) {
   auto *type_str = JS::ToString(cx, type);
   if (!type_str) {
     return false;
@@ -278,7 +274,7 @@ bool Event::init(JSContext *cx, HandleObject self, HandleValue type, HandleValue
 }
 
 JSObject *Event::create(JSContext *cx, HandleValue type, HandleValue init) {
-  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -349,5 +345,3 @@ bool install(api::Engine *engine) {
 }
 
 } // namespace builtins::web::event
-
-

@@ -1,19 +1,17 @@
+#include "url.h"
 #include "blob.h"
 #include "encode.h"
 #include "file.h"
 #include "rust-url.h"
 #include "sequence.hpp"
-#include "url.h"
 #include "worker-location.h"
 
 #include "crypto/uuid.h"
 
-#include "js/Array.h"
 #include "js/AllocPolicy.h"
+#include "js/Array.h"
 #include "js/GCHashTable.h"
 #include "js/TypeDecls.h"
-
-
 
 namespace builtins::web::url {
 
@@ -130,13 +128,13 @@ bool URLSearchParamsIterator::init_class(JSContext *cx, JS::HandleObject global)
   // `constructor` property on `URLSearchParamsIterator.prototype`. The latter
   // because Iterators don't have their own constructor on the prototype.
   return JS_DeleteProperty(cx, global, class_.name) &&
-         JS_DeleteProperty(cx, proto_obj, "constructor");
+         JS_DeleteProperty(cx, proto_obj(cx), "constructor");
 }
 
 JSObject *URLSearchParamsIterator::create(JSContext *cx, JS::HandleObject params, uint8_t type) {
   MOZ_RELEASE_ASSERT(type <= ITER_TYPE_VALUES);
 
-  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -391,13 +389,13 @@ bool URLSearchParams::init_class(JSContext *cx, JS::HandleObject global) {
   }
 
   JS::RootedValue entries(cx);
-  if (!JS_GetProperty(cx, proto_obj, "entries", &entries)) {
+  if (!JS_GetProperty(cx, proto_obj(cx), "entries", &entries)) {
     return false;
   }
 
   JS::SymbolCode code = JS::SymbolCode::iterator;
   JS::RootedId iteratorId(cx, JS::GetWellKnownSymbolKey(cx, code));
-  return JS_DefinePropertyById(cx, proto_obj, iteratorId, entries, 0);
+  return JS_DefinePropertyById(cx, proto_obj(cx), iteratorId, entries, 0);
 }
 
 JSObject *URLSearchParams::create(JSContext *cx, JS::HandleObject self,
@@ -535,18 +533,16 @@ struct UrlKey {
 };
 
 struct UrlKeyHasher {
-  using Lookup = const std::string&;
+  using Lookup = const std::string &;
 
-  static mozilla::HashNumber hash(Lookup lookup) {
-    return mozilla::HashString(lookup.data());
-  }
+  static mozilla::HashNumber hash(Lookup lookup) { return mozilla::HashString(lookup.data()); }
 
-  static bool match(const UrlKey& key, Lookup lookup) {
-    return key.key_ == lookup;
-  }
+  static bool match(const UrlKey &key, Lookup lookup) { return key.key_ == lookup; }
 };
 
-static PersistentRooted<JS::GCHashMap<UrlKey, Heap<JSObject *>, UrlKeyHasher, js::SystemAllocPolicy>> URL_STORE;
+static RuntimePersistentRooted<
+    JS::GCHashMap<UrlKey, Heap<JSObject *>, UrlKeyHasher, js::SystemAllocPolicy>>
+    URL_STORE;
 
 bool URL::createObjectURL(JSContext *cx, unsigned argc, JS::Value *vp) {
   CallArgs args = JS::CallArgsFromVp(argc, vp);
@@ -577,7 +573,7 @@ bool URL::createObjectURL(JSContext *cx, unsigned argc, JS::Value *vp) {
   // 4. Let origin be settings’s origin.
   // 5. Let serialized be the ASCII serialization of origin.
   // 6. If serialized is "null", set it to an implementation-defined value.
-  RootedObject worker_location(cx, WorkerLocation::url.get());
+  RootedObject worker_location(cx, WorkerLocation::url.rooted(cx).get());
   if (worker_location) {
     RootedValue origin(cx);
     if (!JS_GetProperty(cx, worker_location, "origin", &origin)) {
@@ -602,7 +598,7 @@ bool URL::createObjectURL(JSContext *cx, unsigned argc, JS::Value *vp) {
     return false;
   }
 
-  const auto& uuid = maybe_uuid.value();
+  const auto &uuid = maybe_uuid.value();
   result.append(uuid);
 
   RootedString url(cx, JS_NewStringCopyN(cx, result.data(), result.size()));
@@ -610,7 +606,7 @@ bool URL::createObjectURL(JSContext *cx, unsigned argc, JS::Value *vp) {
     return false;
   }
 
-  if (!URL_STORE.get().put(result, obj)) {
+  if (!URL_STORE.rooted(cx).get().put(result, obj)) {
     return false;
   }
 
@@ -642,22 +638,24 @@ bool URL::revokeObjectURL(JSContext *cx, unsigned argc, JS::Value *vp) {
   }
 
   // 4. If entry is null, then return.
-  // 5. Let isAuthorized be the result of checking for same-partition blob URL usage with entry and the current settings object.
+  // 5. Let isAuthorized be the result of checking for same-partition blob URL usage with entry and
+  // the current settings object.
   // 6. If isAuthorized is false, then return.
   // 7. Remove an entry from the Blob URL Store for url.
 
-  URL_STORE.get().remove(url_record);
+  URL_STORE.rooted(cx).get().remove(url_record);
   // NOLINTEND
   return true;
 }
 
-JSObject *URL::getObjectURL(std::string &url_str) {
+JSObject *URL::getObjectURL(JSContext *cx, std::string &url_str) {
   // To obtain a blob object given a blob URL entry blobUrlEntry:
   // 1. Let isAuthorized be true.
-  // 2. If environment is not the string "navigation", then set isAuthorized to the result of checking for same-partition blob URL usage with blobUrlEntry and environment.
+  // 2. If environment is not the string "navigation", then set isAuthorized to the result of
+  // checking for same-partition blob URL usage with blobUrlEntry and environment.
   // 3. If isAuthorized is false, then return failure.
   // 4. Return blobUrlEntry's object.
-  auto url = URL_STORE.get().lookup(url_str);
+  auto url = URL_STORE.rooted(cx).get().lookup(url_str);
   return url ? url->value() : nullptr;
 }
 
@@ -696,7 +694,8 @@ bool URL::searchParams_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   JS::RootedObject params(cx);
   if (params_val.isNullOrUndefined()) {
     JS::RootedObject url_search_params_instance(
-        cx, JS_NewObjectWithGivenProto(cx, &URLSearchParams::class_, URLSearchParams::proto_obj));
+        cx,
+        JS_NewObjectWithGivenProto(cx, &URLSearchParams::class_, URLSearchParams::proto_obj(cx)));
     if (!url_search_params_instance) {
       return false;
     }
@@ -782,8 +781,7 @@ JSObject *URL::create(JSContext *cx, JS::HandleObject self, JS::HandleValue url_
 }
 
 void URL::finalize(JS::GCContext *gcx, JSObject *self) {
-  auto *url =
-      static_cast<jsurl::JSUrl *>(JS::GetReservedSlot(self, Slots::Url).toPrivate());
+  auto *url = static_cast<jsurl::JSUrl *>(JS::GetReservedSlot(self, Slots::Url).toPrivate());
   jsurl::free_jsurl(url);
 }
 
@@ -831,5 +829,3 @@ bool install(api::Engine *engine) {
 }
 
 } // namespace builtins::web::url
-
-

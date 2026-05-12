@@ -5,8 +5,6 @@
 #include "../event/event.h"
 #include "../timers.h"
 
-
-
 namespace builtins::web::abort {
 
 using event::Event;
@@ -137,8 +135,8 @@ bool AbortSignal::any(JSContext *cx, unsigned argc, JS::Value *vp) {
 bool AbortSignal::throwIfAborted(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
 
-   // Steps: Throw this's abort reason, if this's AbortController has signaled
-   // to abort; otherwise, does nothing.
+  // Steps: Throw this's abort reason, if this's AbortController has signaled
+  // to abort; otherwise, does nothing.
   if (is_aborted(self)) {
     RootedValue reason(cx, JS::GetReservedSlot(self, Slots::Reason));
     JS_SetPendingException(cx, reason);
@@ -297,7 +295,7 @@ bool AbortSignal::set_reason(JSContext *cx, HandleObject self, HandleValue reaso
 
 // https://dom.spec.whatwg.org/#interface-AbortSignal
 JSObject *AbortSignal::create(JSContext *cx) {
-  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -368,7 +366,8 @@ JSObject *AbortSignal::create_with_timeout(JSContext *cx, HandleValue timeout) {
   //  global to signal.
   int32_t timer_id = 0;
 
-  JS::RootedObject exception(cx, dom_exception::DOMException::create(cx, "TimeoutError", "TimeoutError"));
+  JS::RootedObject exception(
+      cx, dom_exception::DOMException::create(cx, "TimeoutError", "TimeoutError"));
   if (!exception) {
     return nullptr;
   }
@@ -489,7 +488,7 @@ void AbortSignal::trace(JSTracer *trc, JSObject *self) {
 bool AbortSignal::init_class(JSContext *cx, JS::HandleObject global) {
   EventTarget::register_subclass(&class_);
 
-  if (!init_class_impl(cx, global, EventTarget::proto_obj)) {
+  if (!init_class_impl(cx, global, EventTarget::proto_obj(cx))) {
     return false;
   }
 
@@ -514,5 +513,3 @@ bool install(api::Engine *engine) {
 JSString *AbortSignal::abort_type_atom = nullptr;
 
 } // namespace builtins::web::abort
-
-

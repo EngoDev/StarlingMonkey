@@ -1,5 +1,5 @@
-#include "../dom-exception.h"
 #include "crypto.h"
+#include "../dom-exception.h"
 #include "host_api.h"
 #include "subtle-crypto.h"
 #include "uuid.h"
@@ -68,7 +68,7 @@ bool Crypto::random_uuid(JSContext *cx, unsigned argc, JS::Value *vp) {
     return false;
   }
 
-  const auto& uuid = maybe_uuid.value();
+  const auto &uuid = maybe_uuid.value();
   MOZ_ASSERT(uuid.size() == 36);
 
   JS::RootedString str(cx, JS_NewStringCopyN(cx, uuid.data(), uuid.size()));
@@ -79,16 +79,16 @@ bool Crypto::random_uuid(JSContext *cx, unsigned argc, JS::Value *vp) {
   args.rval().setString(str);
   return true;
 }
-JS::PersistentRooted<JSObject *> Crypto::subtle;
-JS::PersistentRooted<JSObject *> crypto;
+RuntimePersistentRooted<JSObject *> Crypto::subtle;
+RuntimePersistentRooted<JSObject *> crypto;
 
 bool Crypto::subtle_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER_WITH_NAME(0, "subtle get");
-  if (self != crypto.get()) {
+  if (self != crypto.rooted(cx).get()) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "subtle get", "Crypto");
   }
 
-  args.rval().setObject(*subtle);
+  args.rval().setObject(*subtle.rooted(cx));
   return true;
 }
 
@@ -115,7 +115,7 @@ bool crypto_get(JSContext *cx, unsigned argc, JS::Value *vp) {
   if (thisv != JS::UndefinedHandleValue && thisv != JS::ObjectValue(*global)) {
     return api::throw_error(cx, api::Errors::WrongReceiver, "crypto get", "Window");
   }
-  args.rval().setObject(*crypto);
+  args.rval().setObject(*crypto.rooted(cx));
   return true;
 }
 
@@ -125,14 +125,14 @@ bool Crypto::init_class(JSContext *cx, JS::HandleObject global) {
   }
 
   JS::RootedObject cryptoInstance(
-      cx, JS_NewObjectWithGivenProto(cx, &Crypto::class_, Crypto::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &Crypto::class_, Crypto::proto_obj(cx)));
   if (!cryptoInstance) {
     return false;
   }
   crypto.init(cx, cryptoInstance);
 
   JS::RootedObject subtleCrypto(
-      cx, JS_NewObjectWithGivenProto(cx, &SubtleCrypto::class_, SubtleCrypto::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &SubtleCrypto::class_, SubtleCrypto::proto_obj(cx)));
   subtle.init(cx, subtleCrypto);
   return JS_DefineProperty(cx, global, "crypto", crypto_get, nullptr, JSPROP_ENUMERATE);
 }

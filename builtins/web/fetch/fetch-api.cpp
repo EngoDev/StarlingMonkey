@@ -22,8 +22,6 @@ using blob::Blob;
 using fetch::Headers;
 using host_api::HostString;
 
-static api::Engine *ENGINE;
-
 enum class FetchScheme : uint8_t {
   About,
   Blob,
@@ -36,11 +34,11 @@ enum class FetchScheme : uint8_t {
 struct Terminator : AbortAlgorithm {
   mozilla::WeakPtr<ResponseFutureTask> task;
 
-  Terminator(const mozilla::WeakPtr<ResponseFutureTask>& task) : task(task) {}
+  Terminator(const mozilla::WeakPtr<ResponseFutureTask> &task) : task(task) {}
 
   bool run(JSContext *cx) override {
     if (auto *t = task.get()) {
-      return t->abort(ENGINE);
+      return t->abort(api::Engine::get(cx));
     }
     return true;
   }
@@ -128,7 +126,7 @@ bool fetch_https(JSContext *cx, HandleObject request_obj, HandleObject response_
     // TODO: what about non streaming?
     auto task = js::MakeUnique<ResponseFutureTask>(request_obj, pending_handle);
     auto weak = mozilla::WeakPtr<ResponseFutureTask>(task.get());
-    ENGINE->queue_async_task(task.release());
+    api::Engine::get(cx)->queue_async_task(task.release());
 
     RootedObject signal(cx, Request::signal(request_obj));
     MOZ_ASSERT(signal);
@@ -165,7 +163,7 @@ bool fetch_blob(JSContext *cx, HandleObject request_obj, HandleObject response_p
   // 7. Let blob be the result of obtaining a blob object given blobURLEntry and
   // navigationOrEnvironment.
   std::string url_key(url.ptr.get());
-  RootedObject blob(cx, url::URL::getObjectURL(url_key));
+  RootedObject blob(cx, url::URL::getObjectURL(cx, url_key));
 
   // 8. If blob is not a Blob object, then return a network error.
   if (!blob || !Blob::is_instance(blob)) {
@@ -204,8 +202,8 @@ bool fetch_blob(JSContext *cx, HandleObject request_obj, HandleObject response_p
     Response::set_status_message_from_code(cx, response_obj, 200);
 
     // 3. Set response's body to bodyWithType's body.
-    // 4. Set response's header list to (`Content-Length`, serializedFullLength), (`Content-Type`, type).
-    // 3 and 4 done at the end.
+    // 4. Set response's header list to (`Content-Length`, serializedFullLength), (`Content-Type`,
+    // type). 3 and 4 done at the end.
     // 14. Otherwise:
   } else {
     // 1. Set response's range-requested flag.
@@ -389,8 +387,6 @@ bool fetch(JSContext *cx, unsigned argc, Value *vp) {
 const JSFunctionSpec methods[] = {JS_FN("fetch", fetch, 2, JSPROP_ENUMERATE), JS_FS_END};
 
 bool install(api::Engine *engine) {
-  ENGINE = engine;
-
   if (!JS_DefineFunctions(engine->cx(), engine->global(), methods)) {
     return false;
   }

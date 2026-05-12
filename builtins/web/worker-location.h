@@ -3,8 +3,6 @@
 
 #include "builtin.h"
 
-
-
 namespace builtins::web::worker_location {
 
 class WorkerLocation : public BuiltinNoConstructor<WorkerLocation> {
@@ -18,7 +16,7 @@ public:
   static const JSFunctionSpec methods[];
   static const JSPropertySpec properties[];
 
-  static JS::PersistentRooted<JSObject *> url;
+  static RuntimePersistentRooted<JSObject *> url;
   static bool toString(JSContext *cx, unsigned argc, JS::Value *vp);
 
   static bool init_class(JSContext *cx, JS::HandleObject global);
@@ -27,7 +25,5 @@ public:
 bool install(api::Engine *engine);
 
 } // namespace builtins::web::worker_location
-
-
 
 #endif

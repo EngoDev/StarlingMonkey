@@ -2,8 +2,8 @@
 #include "encode.h"
 #include "event.h"
 
-#include "../dom-exception.h"
 #include "../abort/abort-signal.h"
+#include "../dom-exception.h"
 
 #include "js/GCPolicyAPI.h"
 #include "mozilla/Assertions.h"
@@ -127,14 +127,12 @@ template <typename T> struct GCPolicy<RefPtr<T>> {
 
 } // namespace JS
 
-
-
 namespace builtins::web::event {
 
 using EventFlag = Event::EventFlag;
-using dom_exception::DOMException;
-using abort::AbortSignal;
 using abort::AbortAlgorithm;
+using abort::AbortSignal;
+using dom_exception::DOMException;
 
 struct Terminator : AbortAlgorithm {
   Heap<JSObject *> target;
@@ -142,7 +140,8 @@ struct Terminator : AbortAlgorithm {
   Heap<Value> callback;
   Heap<Value> opts;
 
-  Terminator(JSContext *cx, HandleObject target, HandleValue type, HandleValue callback, HandleValue opts)
+  Terminator(JSContext *cx, HandleObject target, HandleValue type, HandleValue callback,
+             HandleValue opts)
       : target(target), type(type), callback(callback), opts(opts) {}
 
   bool run(JSContext *cx) override {
@@ -297,7 +296,7 @@ bool EventTarget::add_listener(JSContext *cx, HandleObject self, HandleValue typ
     listener->removed = false;
 
     list->append(listener);
-  } else if((*it)->removed) {
+  } else if ((*it)->removed) {
     // if existing listener was marked for removal, then move it to the end of the list
     // and update its removed flag. This is done to ensure the order of listeners. We only
     // update listener's properties that are not check for listener equality.
@@ -586,7 +585,7 @@ bool EventTarget::inner_invoke(JSContext *cx, HandleObject event,
 }
 
 JSObject *EventTarget::create(JSContext *cx) {
-  JSObject *self = JS_NewObjectWithGivenProto(cx, &class_, proto_obj);
+  JSObject *self = JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx));
   if (!self) {
     return nullptr;
   }
@@ -643,5 +642,3 @@ bool EventTarget::init_class(JSContext *cx, JS::HandleObject global) {
 }
 
 } // namespace builtins::web::event
-
-

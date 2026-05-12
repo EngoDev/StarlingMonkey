@@ -121,13 +121,13 @@ bool FormDataIterator::init_class(JSContext *cx, JS::HandleObject global) {
   // `constructor` property on `FormDataIterator.prototype`. The latter
   // because Iterators don't have their own constructor on the prototype.
   return JS_DeleteProperty(cx, global, class_.name) &&
-         JS_DeleteProperty(cx, proto_obj, "constructor");
+         JS_DeleteProperty(cx, proto_obj(cx), "constructor");
 }
 
 JSObject *FormDataIterator::create(JSContext *cx, JS::HandleObject form, uint8_t type) {
   MOZ_RELEASE_ASSERT(type <= ITER_TYPE_VALUES);
 
-  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
@@ -406,7 +406,7 @@ bool FormData::set(JSContext *cx, unsigned argc, JS::Value *vp) {
 }
 
 JSObject *FormData::create(JSContext *cx) {
-  JSObject *self = JS_NewObjectWithGivenProto(cx, &class_, proto_obj);
+  JSObject *self = JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx));
   if (!self) {
     return nullptr;
   }
@@ -472,13 +472,13 @@ bool FormData::init_class(JSContext *cx, JS::HandleObject global) {
   }
 
   JS::RootedValue entries(cx);
-  if (!JS_GetProperty(cx, proto_obj, "entries", &entries)) {
+  if (!JS_GetProperty(cx, proto_obj(cx), "entries", &entries)) {
     return false;
   }
 
   JS::SymbolCode code = JS::SymbolCode::iterator;
   JS::RootedId iteratorId(cx, JS::GetWellKnownSymbolKey(cx, code));
-  return JS_DefinePropertyById(cx, proto_obj, iteratorId, entries, 0);
+  return JS_DefinePropertyById(cx, proto_obj(cx), iteratorId, entries, 0);
 }
 
 bool install(api::Engine *engine) {

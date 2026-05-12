@@ -3,19 +3,22 @@
 
 #include "extension-api.h"
 
+#include <memory>
 #include <optional>
 #include <span>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #include "js/ArrayBuffer.h"
 #include "js/Conversions.h"
-#include "jsapi.h"
-#include "jsfriendapi.h"
 #include "js/experimental/TypedData.h"
 #include "js/ForOfIterator.h"
 #include "js/Object.h"
 #include "js/Promise.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 
 using JS::CallArgs;
 using JS::CallArgsFromVp;
@@ -173,6 +176,37 @@ inline bool ThrowIfNotConstructing(JSContext *cx, const CallArgs &args, const ch
 
 namespace builtins {
 
+JS::HandleObject builtin_proto(JSContext *cx, const JSClass *cls);
+bool set_builtin_proto(JSContext *cx, const JSClass *cls, JSObject *proto);
+void clear_builtin_protos(JSContext *cx);
+
+template <typename T> class RuntimePersistentRooted {
+  std::unordered_map<JSRuntime *, std::unique_ptr<JS::PersistentRooted<T>>> roots_;
+
+public:
+  template <typename... Args> void init(JSContext *cx, Args &&...args) {
+    auto root = std::make_unique<JS::PersistentRooted<T>>();
+    root->init(cx, std::forward<Args>(args)...);
+    roots_[JS_GetRuntime(cx)] = std::move(root);
+  }
+
+  bool initialized(JSContext *cx) const { return roots_.contains(JS_GetRuntime(cx)); }
+
+  JS::PersistentRooted<T> &rooted(JSContext *cx) {
+    auto it = roots_.find(JS_GetRuntime(cx));
+    MOZ_RELEASE_ASSERT(it != roots_.end());
+    return *it->second;
+  }
+
+  const JS::PersistentRooted<T> &rooted(JSContext *cx) const {
+    auto it = roots_.find(JS_GetRuntime(cx));
+    MOZ_RELEASE_ASSERT(it != roots_.end());
+    return *it->second;
+  }
+
+  void erase(JSContext *cx) { roots_.erase(JS_GetRuntime(cx)); }
+};
+
 // Default objects policy with empty class ops
 struct DefaultClassPolicy {
   template <typename Impl> static constexpr JSClassOps class_ops() { return {}; }
@@ -186,9 +220,7 @@ struct FinalizableClassPolicy {
     return {.finalize = &finalize<Impl>};
   }
 
-  static constexpr uint32_t class_flags() {
-    return JSCLASS_BACKGROUND_FINALIZE;
-  }
+  static constexpr uint32_t class_flags() { return JSCLASS_BACKGROUND_FINALIZE; }
 
   template <typename Impl> static void finalize(JS::GCContext *gcx, JSObject *obj) {
     Impl::finalize(gcx, obj);
@@ -222,11 +254,10 @@ private:
       JSCLASS_HAS_RESERVED_SLOTS(static_cast<uint32_t>(Impl::Slots::Count)) |
       ClassPolicy::class_flags();
 
-
-    static std::unordered_set<const JSClass *> &get_registry() {
-      static std::unordered_set<const JSClass *> registry;
-      return registry;
-    }
+  static std::unordered_set<const JSClass *> &get_registry() {
+    static std::unordered_set<const JSClass *> registry;
+    return registry;
+  }
 
 public:
   static constexpr JSClass class_{
@@ -235,7 +266,7 @@ public:
       &class_ops,
   };
 
-  static JS::PersistentRootedObject proto_obj;
+  static JS::HandleObject proto_obj(JSContext *cx) { return builtin_proto(cx, &class_); }
 
   static JS::Result<std::tuple<CallArgs, RootedObject *>>
   MethodHeaderWithName(const int required_argc, JSContext *cx, const unsigned argc, Value *vp,
@@ -252,9 +283,7 @@ public:
     return {std::make_tuple(args, &self)};
   }
 
-  static void register_subclass(const JSClass *cls) {
-    get_registry().insert(cls);
-  }
+  static void register_subclass(const JSClass *cls) { get_registry().insert(cls); }
 
   static bool is_subclass(const JSObject *obj) {
     return get_registry().contains(JS::GetClass(obj));
@@ -276,23 +305,24 @@ public:
     return true;
   }
 
-static bool init_class_impl(JSContext *cx, const HandleObject global,
-                           std::optional<const HandleObject> maybe_parent_proto = std::nullopt) {
-  MOZ_RELEASE_ASSERT(!maybe_parent_proto || maybe_parent_proto.value() != nullptr,
-    "Trying to register a subclass before the parent class is initialized. "
-    "Make sure to add the parent class builtin before the subclass.");
+  static bool init_class_impl(JSContext *cx, const HandleObject global,
+                              std::optional<const HandleObject> maybe_parent_proto = std::nullopt) {
+    MOZ_RELEASE_ASSERT(!maybe_parent_proto || maybe_parent_proto.value() != nullptr,
+                       "Trying to register a subclass before the parent class is initialized. "
+                       "Make sure to add the parent class builtin before the subclass.");
 
-  RootedObject parent_proto(cx, maybe_parent_proto.value_or(nullptr));
-  proto_obj.init(cx, JS_InitClass(cx, global, &class_, parent_proto, Impl::class_name,
-                                  Impl::constructor, Impl::ctor_length, Impl::properties,
-                                  Impl::methods, Impl::static_properties, Impl::static_methods));
+    RootedObject parent_proto(cx, maybe_parent_proto.value_or(nullptr));
+    RootedObject proto(cx,
+                       JS_InitClass(cx, global, &class_, parent_proto, Impl::class_name,
+                                    Impl::constructor, Impl::ctor_length, Impl::properties,
+                                    Impl::methods, Impl::static_properties, Impl::static_methods));
+    if (!proto) {
+      return false;
+    }
 
-    return proto_obj != nullptr;
+    return set_builtin_proto(cx, &class_, proto);
   }
 };
-
-template <typename Impl, typename ClassPolicy>
-PersistentRooted<JSObject *> BuiltinImpl<Impl, ClassPolicy>::proto_obj{};
 
 template <typename Impl> class BuiltinNoConstructor : public BuiltinImpl<Impl> {
 public:

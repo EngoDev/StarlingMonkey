@@ -5,11 +5,11 @@
 
 struct JSContext;
 
-/// We need a handle to the JSContext in order to use JS_realloc in the
-/// implementation of cabi_realloc. Unfortunately way that we can do this now is
-/// to keep the context pointer in a global that can be used there. This global
-/// is initialized in js-compute-runtime.cpp.
-extern JSContext *CONTEXT;
+/// The C ABI allocator needs a JSContext in order to use JS_realloc/JS_free.
+/// StarlingMonkey can host more than one JSContext, so this is the currently
+/// active allocation context rather than a process-wide owner.
+void set_cabi_alloc_context(JSContext *cx);
+JSContext *cabi_alloc_context();
 
 extern "C" {
 
@@ -18,7 +18,9 @@ extern "C" {
 void *cabi_realloc(void *ptr, size_t orig_size, size_t align, size_t new_size);
 
 /// A more ergonomic version of cabi_realloc for fresh allocations.
-inline void *cabi_malloc(size_t bytes, size_t align) { return cabi_realloc(nullptr, 0, align, bytes); }
+inline void *cabi_malloc(size_t bytes, size_t align) {
+  return cabi_realloc(nullptr, 0, align, bytes);
+}
 
 /// Not required by wit-bindgen generated code, but a usefully named version of
 /// JS_free that can help with identifying where memory allocated by the c-abi.

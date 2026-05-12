@@ -1,17 +1,13 @@
-#include "event-target.h"
 #include "global-event-target.h"
+#include "event-target.h"
 
 namespace {
-JS::PersistentRootedObject GLOBAL_EVENT_TARGET;
+builtins::RuntimePersistentRooted<JSObject *> GLOBAL_EVENT_TARGET;
 }
-
-
 
 namespace builtins::web::event {
 
-JSObject *global_event_target() {
-  return GLOBAL_EVENT_TARGET;
-}
+JSObject *global_event_target(JSContext *cx) { return GLOBAL_EVENT_TARGET.rooted(cx); }
 
 static bool addEventListener(JSContext *cx, unsigned argc, Value *vp) {
   JS::CallArgs args = CallArgsFromVp(argc, vp);
@@ -25,7 +21,7 @@ static bool addEventListener(JSContext *cx, unsigned argc, Value *vp) {
 
   args.rval().setUndefined();
 
-  return EventTarget::add_listener(cx, GLOBAL_EVENT_TARGET, type, callback, opts);
+  return EventTarget::add_listener(cx, GLOBAL_EVENT_TARGET.rooted(cx), type, callback, opts);
 }
 
 static bool removeEventListener(JSContext *cx, unsigned argc, Value *vp) {
@@ -39,7 +35,7 @@ static bool removeEventListener(JSContext *cx, unsigned argc, Value *vp) {
   RootedValue opts(cx, args.get(2));
   args.rval().setUndefined();
 
-  return EventTarget::remove_listener(cx, GLOBAL_EVENT_TARGET, type, callback, opts);
+  return EventTarget::remove_listener(cx, GLOBAL_EVENT_TARGET.rooted(cx), type, callback, opts);
 }
 
 static bool dispatchEvent(JSContext *cx, unsigned argc, Value *vp) {
@@ -49,7 +45,7 @@ static bool dispatchEvent(JSContext *cx, unsigned argc, Value *vp) {
   }
 
   RootedValue event(cx, args.get(0));
-  return EventTarget::dispatch_event(cx, GLOBAL_EVENT_TARGET, event, args.rval());
+  return EventTarget::dispatch_event(cx, GLOBAL_EVENT_TARGET.rooted(cx), event, args.rval());
 }
 
 bool global_event_target_init(JSContext *cx, HandleObject global) {
@@ -76,5 +72,3 @@ bool global_event_target_init(JSContext *cx, HandleObject global) {
 }
 
 } // namespace builtins::web::event
-
-

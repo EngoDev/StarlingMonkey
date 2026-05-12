@@ -3,9 +3,9 @@
 
 #include "decompression-stream.h"
 #include "encode.h"
+#include "stream-errors.h"
 #include "transform-stream-default-controller.h"
 #include "transform-stream.h"
-#include "stream-errors.h"
 
 namespace builtins::web::streams {
 
@@ -40,8 +40,8 @@ uint8_t *output_buffer(JSObject *self) {
   return (uint8_t *)ptr;
 }
 
-JS::PersistentRooted<JSObject *> transformAlgo;
-JS::PersistentRooted<JSObject *> flushAlgo;
+RuntimePersistentRooted<JSObject *> transformAlgo;
+RuntimePersistentRooted<JSObject *> flushAlgo;
 
 // Steps 1-5 of the transform algorithm, and 1-5 of the flush algorithm.
 bool inflate_chunk(JSContext *cx, JS::HandleObject self, JS::HandleValue chunk, bool finished) {
@@ -109,7 +109,6 @@ bool inflate_chunk(JSContext *cx, JS::HandleObject self, JS::HandleValue chunk, 
     zstream->next_out = buffer;
     int err = inflate(zstream, finished ? Z_FINISH : Z_NO_FLUSH);
     if (err != Z_OK && err != Z_STREAM_END && err != Z_BUF_ERROR) {
-
     }
 
     size_t bytes = BUFFER_SIZE - zstream->avail_out;
@@ -229,7 +228,8 @@ JSObject *create(JSContext *cx, JS::HandleObject stream, Format format) {
   // this's transform with _transformAlgorithm_ set to _transformAlgorithm_ and
   // _flushAlgorithm_ set to _flushAlgorithm_.
   JS::RootedObject transform(cx, TransformStream::create(cx, 1, nullptr, 0, nullptr, stream_val,
-                                                         nullptr, transformAlgo, flushAlgo));
+                                                         nullptr, transformAlgo.rooted(cx),
+                                                         flushAlgo.rooted(cx)));
   if (!transform) {
     return nullptr;
   }
@@ -298,8 +298,8 @@ bool DecompressionStream::constructor(JSContext *cx, unsigned argc, JS::Value *v
   } else if (strcmp(format_chars.begin(), "gzip") == 0) {
     format = Format::GZIP;
   } else {
-    return api::throw_error(cx, api::Errors::TypeError, "DecompressionStream constructor",
-                            "format", "be 'deflate', 'deflate-raw', or 'gzip'");
+    return api::throw_error(cx, api::Errors::TypeError, "DecompressionStream constructor", "format",
+                            "be 'deflate', 'deflate-raw', or 'gzip'");
   }
 
   JS::RootedObject decompressionStreamInstance(cx, JS_NewObjectForConstructor(cx, &class_, args));
@@ -334,5 +334,3 @@ bool DecompressionStream::init_class(JSContext *cx, JS::HandleObject global) {
 }
 
 } // namespace builtins::web::streams
-
-

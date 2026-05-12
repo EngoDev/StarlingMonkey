@@ -1,23 +1,31 @@
 #include "performance.h"
 #include <chrono>
+#include <unordered_map>
 
 namespace {
 using FpMilliseconds = std::chrono::duration<float, std::chrono::milliseconds::period>;
+std::unordered_map<JSRuntime *, std::chrono::steady_clock::time_point> time_origins;
 } // namespace
-
-
 
 namespace builtins::web::performance {
 
-std::optional<std::chrono::steady_clock::time_point> Performance::timeOrigin;
+void Performance::set_time_origin(JSContext *cx,
+                                  std::chrono::steady_clock::time_point time_origin) {
+  time_origins[JS_GetRuntime(cx)] = time_origin;
+}
+
+std::chrono::steady_clock::time_point Performance::time_origin(JSContext *cx) {
+  auto it = time_origins.find(JS_GetRuntime(cx));
+  MOZ_RELEASE_ASSERT(it != time_origins.end());
+  return it->second;
+}
 
 // https://w3c.github.io/hr-time/#dom-performance-now
 bool Performance::now(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(0);
-  MOZ_ASSERT(Performance::timeOrigin.has_value());
 
   auto finish = std::chrono::high_resolution_clock::now();
-  auto duration = FpMilliseconds(finish - Performance::timeOrigin.value()).count();
+  auto duration = FpMilliseconds(finish - time_origin(cx)).count();
 
   JS::RootedValue elapsed(cx, JS::Float32Value(duration));
   args.rval().set(elapsed);
@@ -25,9 +33,8 @@ bool Performance::now(JSContext *cx, unsigned argc, JS::Value *vp) {
 }
 
 bool Performance::timeOrigin_get(JSContext *cx, unsigned argc, JS::Value *vp) {
-  MOZ_ASSERT(Performance::timeOrigin.has_value());
   METHOD_HEADER(0);
-  auto time = FpMilliseconds(Performance::timeOrigin.value().time_since_epoch()).count();
+  auto time = FpMilliseconds(time_origin(cx).time_since_epoch()).count();
   JS::RootedValue elapsed(cx, JS::Float32Value(time));
   args.rval().set(elapsed);
   return true;
@@ -44,7 +51,7 @@ const JSPropertySpec Performance::static_properties[] = {JS_PS_END};
 
 bool Performance::create(JSContext *cx, JS::HandleObject global) {
   JS::RootedObject performance(
-      cx, JS_NewObjectWithGivenProto(cx, &Performance::class_, Performance::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &Performance::class_, Performance::proto_obj(cx)));
   if (!performance) {
     return false;
   }
@@ -62,6 +69,7 @@ bool Performance::init_class(JSContext *cx, JS::HandleObject global) {
 }
 
 bool install(api::Engine *engine) {
+  Performance::set_time_origin(engine->cx(), std::chrono::high_resolution_clock::now());
   if (!Performance::init_class(engine->cx(), engine->global())) {
     return false;
   }
@@ -72,5 +80,3 @@ bool install(api::Engine *engine) {
 }
 
 } // namespace builtins::web::performance
-
-

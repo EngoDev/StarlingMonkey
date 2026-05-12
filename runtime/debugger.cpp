@@ -113,7 +113,7 @@ bool TCPSocket::receive(JSContext *cx, unsigned argc, JS::Value *vp) {
 }
 
 JSObject *TCPSocket::FromSocket(JSContext *cx, host_api::TCPSocket *socket) {
-  RootedObject instance(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  RootedObject instance(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!instance) {
     return nullptr;
   }
@@ -206,7 +206,8 @@ bool initialize_debugger(JSContext *cx, uint16_t port, bool content_already_init
       .setNewCompartmentInSystemZone()
       .setInvisibleToDebugger(true);
 
-  static JSClass global_class = {.name="global", .flags=JSCLASS_GLOBAL_FLAGS, .cOps=&JS::DefaultGlobalClassOps};
+  static JSClass global_class = {
+      .name = "global", .flags = JSCLASS_GLOBAL_FLAGS, .cOps = &JS::DefaultGlobalClassOps};
   RootedObject global(cx);
   global = JS_NewGlobalObject(cx, &global_class, nullptr, JS::DontFireOnNewGlobalHook, options);
   if (!global) {
@@ -324,9 +325,7 @@ bool dbg_print(JSContext *cx, unsigned argc, Value *vp) {
   return false;
 }
 
-mozilla::Maybe<std::string_view> replacement_script_path() {
-  return mozilla::Nothing();
-}
+mozilla::Maybe<std::string_view> replacement_script_path() { return mozilla::Nothing(); }
 
 } // namespace content_debugger
 

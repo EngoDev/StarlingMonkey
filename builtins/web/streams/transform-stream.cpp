@@ -13,7 +13,7 @@ namespace ReadableStream_additions {
 
 using namespace builtins::web::streams;
 
-static JS::PersistentRooted<JSObject *> proto_obj;
+static builtins::RuntimePersistentRooted<JSObject *> proto_obj;
 
 bool is_instance(JSObject *obj) { return JS::IsReadableStream(obj); }
 
@@ -26,8 +26,8 @@ bool check_receiver(JSContext *cx, JS::HandleValue receiver, const char *method_
   return true;
 };
 
-static JS::PersistentRooted<JS::Value> original_pipeTo;
-static JS::PersistentRooted<JS::Value> overridden_pipeTo;
+static builtins::RuntimePersistentRooted<JS::Value> original_pipeTo;
+static builtins::RuntimePersistentRooted<JS::Value> overridden_pipeTo;
 
 bool pipeTo(JSContext *cx, unsigned argc, JS::Value *vp) {
   METHOD_HEADER(1)
@@ -52,7 +52,8 @@ bool pipeTo(JSContext *cx, unsigned argc, JS::Value *vp) {
     }
   }
 
-  return JS::Call(cx, args.thisv(), original_pipeTo, JS::HandleValueArray(args), args.rval());
+  return JS::Call(cx, args.thisv(), original_pipeTo.rooted(cx), JS::HandleValueArray(args),
+                  args.rval());
 }
 
 bool pipeThrough(JSContext *cx, JS::HandleObject source_readable, JS::HandleObject target_writable,
@@ -90,7 +91,7 @@ bool pipeThrough(JSContext *cx, JS::HandleObject source_readable, JS::HandleObje
   newArgs[1].set(options);
   JS::RootedValue thisv(cx, JS::ObjectValue(*source_readable));
   JS::RootedValue rval(cx);
-  if (!JS::Call(cx, thisv, overridden_pipeTo, newArgs, &rval)) {
+  if (!JS::Call(cx, thisv, overridden_pipeTo.rooted(cx), newArgs, &rval)) {
     return false;
   }
 
@@ -159,22 +160,24 @@ bool initialize_additions(JSContext *cx, JS::HandleObject global) {
     return false;
   }
   proto_obj.init(cx, &val.toObject());
-  MOZ_ASSERT(proto_obj);
+  MOZ_ASSERT(proto_obj.rooted(cx));
 
   original_pipeTo.init(cx);
   overridden_pipeTo.init(cx);
-  if (!JS_GetProperty(cx, proto_obj, "pipeTo", &original_pipeTo)) {
+  if (!JS_GetProperty(cx, proto_obj.rooted(cx), "pipeTo", &original_pipeTo.rooted(cx))) {
     return false;
   }
-  MOZ_ASSERT(JS::IsCallable(&original_pipeTo.toObject()));
+  MOZ_ASSERT(JS::IsCallable(&original_pipeTo.rooted(cx).toObject()));
 
-  JSFunction *pipeTo_fun = JS_DefineFunction(cx, proto_obj, "pipeTo", pipeTo, 1, JSPROP_ENUMERATE);
+  JSFunction *pipeTo_fun =
+      JS_DefineFunction(cx, proto_obj.rooted(cx), "pipeTo", pipeTo, 1, JSPROP_ENUMERATE);
   if (!pipeTo_fun) {
     return false;
   }
 
-  overridden_pipeTo.setObject(*JS_GetFunctionObject(pipeTo_fun));
-  return JS_DefineFunction(cx, proto_obj, "pipeThrough", pipeThrough, 1, JSPROP_ENUMERATE) != nullptr;
+  overridden_pipeTo.rooted(cx).setObject(*JS_GetFunctionObject(pipeTo_fun));
+  return JS_DefineFunction(cx, proto_obj.rooted(cx), "pipeThrough", pipeThrough, 1,
+                           JSPROP_ENUMERATE) != nullptr;
 }
 } // namespace ReadableStream_additions
 
@@ -250,7 +253,6 @@ bool ExtractStrategy(JSContext *cx, JS::HandleValue strategy, double default_hwm
  * All algorithm names and steps refer to spec algorithms defined at
  * https://streams.spec.whatwg.org/#ts-class
  */
-
 
 namespace builtins::web::streams {
 /**
@@ -859,9 +861,9 @@ bool TransformStream::Initialize(JSContext *cx, JS::HandleObject stream,
   // Step 8.  Set stream.[readable] to ! [CreateReadableStream](startAlgorithm,
   // pullAlgorithm, cancelAlgorithm, readableHighWaterMark,
   // readableSizeAlgorithm).
-  JS::RootedObject source(
-      cx, NativeStreamSource::create(cx, stream, startPromiseVal, pullAlgorithm, cancelAlgorithm,
-                                     readableSizeAlgorithm, readableHighWaterMark));
+  JS::RootedObject source(cx, NativeStreamSource::create(cx, stream, startPromiseVal, pullAlgorithm,
+                                                         cancelAlgorithm, readableSizeAlgorithm,
+                                                         readableHighWaterMark));
   if (!source) {
     return false;
   }
@@ -989,7 +991,7 @@ JSObject *TransformStream::create(JSContext *cx, double writableHighWaterMark,
                                   JS::HandleValue transformer, JS::HandleObject startFunction,
                                   JS::HandleObject transformFunction,
                                   JS::HandleObject flushFunction) {
-  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }

@@ -16,6 +16,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 
 using builtins::web::event::Event;
 using builtins::web::event::EventTarget;
@@ -27,33 +28,36 @@ namespace builtins::web::fetch::fetch_event {
 
 namespace {
 
-api::Engine *ENGINE;
-JSString *fetch_type_atom;
+RuntimePersistentRooted<JSString *> fetch_type_atom;
+RuntimePersistentRooted<JSObject *> INSTANCE;
+std::unordered_map<JSRuntime *, host_api::HttpOutgoingBody *> STREAMING_BODY;
 
-JS::PersistentRootedObject INSTANCE;
-host_api::HttpOutgoingBody *STREAMING_BODY;
+constexpr const std::string_view DEFAULT_NO_HANDLER_ERROR_MSG =
+    "ERROR: no fetch-event handler triggered, was one registered?";
 
-constexpr const std::string_view DEFAULT_NO_HANDLER_ERROR_MSG = "ERROR: no fetch-event handler triggered, was one registered?";
+host_api::HttpOutgoingBody *&streaming_body(JSContext *cx) {
+  return STREAMING_BODY[JS_GetRuntime(cx)];
+}
 
-void inc_pending_promise_count(JSObject *self) {
+void inc_pending_promise_count(JSContext *cx, JSObject *self) {
   MOZ_ASSERT(FetchEvent::is_instance(self));
   auto count = JS::GetReservedSlot(self, FetchEvent::Slots::PendingPromiseCount).toInt32();
   count++;
   MOZ_ASSERT(count > 0);
   if (count == 1) {
-    ENGINE->incr_event_loop_interest();
+    api::Engine::get(cx)->incr_event_loop_interest();
   }
 
   JS::SetReservedSlot(self, FetchEvent::Slots::PendingPromiseCount, JS::Int32Value(count));
 }
 
-void dec_pending_promise_count(JSObject *self) {
+void dec_pending_promise_count(JSContext *cx, JSObject *self) {
   MOZ_ASSERT(FetchEvent::is_instance(self));
   auto count = JS::GetReservedSlot(self, FetchEvent::Slots::PendingPromiseCount).toInt32();
   MOZ_ASSERT(count > 0);
   count--;
   if (count == 0) {
-    ENGINE->decr_event_loop_interest();
+    api::Engine::get(cx)->decr_event_loop_interest();
   }
   JS::SetReservedSlot(self, FetchEvent::Slots::PendingPromiseCount, JS::Int32Value(count));
 }
@@ -62,7 +66,7 @@ void dec_pending_promise_count(JSObject *self) {
 bool dec_pending_promise_count(JSContext *cx, JS::HandleObject event, JS::HandleValue extra,
                                JS::CallArgs args) {
   // Step 5.1
-  dec_pending_promise_count(event);
+  dec_pending_promise_count(cx, event);
 
   // Note: step 5.2 not relevant to our implementation.
   return true;
@@ -78,17 +82,19 @@ bool handle_wait_until_rejection(JSContext *cx, JS::HandleObject event, JS::Hand
   fprintf(stderr, "Warning: Promise passed to FetchEvent#waitUntil was rejected with error. "
                   "Pending tasks after that error might not run. Error details:\n");
   RootedObject promise(cx, &promiseVal.toObject());
-  ENGINE->dump_promise_rejection(args.get(0), promise, stderr);
+  api::Engine::get(cx)->dump_promise_rejection(args.get(0), promise, stderr);
   return dec_pending_promise_count(cx, event, promiseVal, args);
 }
 
-bool add_pending_promise(JSContext *cx, JS::HandleObject self, JS::HandleObject promise, bool for_waitUntil) {
+bool add_pending_promise(JSContext *cx, JS::HandleObject self, JS::HandleObject promise,
+                         bool for_waitUntil) {
   MOZ_ASSERT(FetchEvent::is_instance(self));
   MOZ_ASSERT(JS::IsPromiseObject(promise));
 
   JS::RootedObject resolve_handler(cx);
-  resolve_handler = &GetReservedSlot(self,
-    static_cast<uint32_t>(FetchEvent::Slots::DecPendingPromiseCountFunc)).toObject();
+  resolve_handler =
+      &GetReservedSlot(self, static_cast<uint32_t>(FetchEvent::Slots::DecPendingPromiseCountFunc))
+           .toObject();
 
   JS::RootedObject reject_handler(cx);
   if (for_waitUntil) {
@@ -106,7 +112,7 @@ bool add_pending_promise(JSContext *cx, JS::HandleObject self, JS::HandleObject 
     return false;
   }
 
-  inc_pending_promise_count(self);
+  inc_pending_promise_count(cx, self);
   return true;
 }
 
@@ -124,8 +130,8 @@ JSObject *FetchEvent::prepare_downstream_request(JSContext *cx) {
 
 bool FetchEvent::init_incoming_request(JSContext *cx, JS::HandleObject self,
                                        host_api::HttpIncomingRequest *req) {
-  builtins::web::performance::Performance::timeOrigin.emplace(
-      std::chrono::high_resolution_clock::now());
+  builtins::web::performance::Performance::set_time_origin(
+      cx, std::chrono::high_resolution_clock::now());
   JS::RootedObject request(
       cx, &JS::GetReservedSlot(self, static_cast<uint32_t>(Slots::Request)).toObject());
 
@@ -167,7 +173,7 @@ bool FetchEvent::init_incoming_request(JSContext *cx, JS::HandleObject self,
 
   // Set the URL for `globalThis.location` to the client request's URL.
   JS::RootedObject url_instance(
-      cx, JS_NewObjectWithGivenProto(cx, &url::URL::class_, url::URL::proto_obj));
+      cx, JS_NewObjectWithGivenProto(cx, &url::URL::class_, url::URL::proto_obj(cx)));
   if (!url_instance) {
     return false;
   }
@@ -176,8 +182,8 @@ bool FetchEvent::init_incoming_request(JSContext *cx, JS::HandleObject self,
   std::copy(uri_str.begin(), uri_str.end(), uri_bytes);
   jsurl::SpecString spec(uri_bytes, uri_str.size(), uri_str.size());
 
-  worker_location::WorkerLocation::url = url::URL::create(cx, url_instance, spec);
-  return worker_location::WorkerLocation::url != nullptr;
+  worker_location::WorkerLocation::url.rooted(cx) = url::URL::create(cx, url_instance, spec);
+  return worker_location::WorkerLocation::url.rooted(cx) != nullptr;
 }
 
 bool FetchEvent::request_get(JSContext *cx, unsigned argc, JS::Value *vp) {
@@ -189,15 +195,15 @@ bool FetchEvent::request_get(JSContext *cx, unsigned argc, JS::Value *vp) {
 
 namespace {
 
-bool send_response(host_api::HttpOutgoingResponse *response, JS::HandleObject self,
+bool send_response(JSContext *cx, host_api::HttpOutgoingResponse *response, JS::HandleObject self,
                    FetchEvent::State new_state) {
   MOZ_ASSERT(FetchEvent::state(self) == FetchEvent::State::unhandled ||
              FetchEvent::state(self) == FetchEvent::State::waitToRespond);
   auto result = response->send();
-  FetchEvent::set_state(self, new_state);
+  FetchEvent::set_state(cx, self, new_state);
 
   if (const auto *err = result.to_err()) {
-    HANDLE_ERROR(ENGINE->cx(), *err);
+    HANDLE_ERROR(cx, *err);
     return false;
   }
 
@@ -211,8 +217,8 @@ bool start_response(JSContext *cx, JS::HandleObject response_obj) {
     return false;
   }
 
-  host_api::HttpOutgoingResponse* response =
-    host_api::HttpOutgoingResponse::make(status, std::move(headers));
+  host_api::HttpOutgoingResponse *response =
+      host_api::HttpOutgoingResponse::make(status, std::move(headers));
 
   auto *existing_handle = Response::maybe_response_handle(response_obj);
   if (existing_handle) {
@@ -228,11 +234,11 @@ bool start_response(JSContext *cx, JS::HandleObject response_obj) {
   }
 
   if (streaming) {
-    STREAMING_BODY = response->body().unwrap();
-    FetchEvent::increase_interest();
+    streaming_body(cx) = response->body().unwrap();
+    FetchEvent::increase_interest(cx);
   }
 
-  return send_response(response, FetchEvent::instance(),
+  return send_response(cx, response, FetchEvent::instance(cx),
                        streaming ? FetchEvent::State::responseStreaming
                                  : FetchEvent::State::responseDone);
 }
@@ -270,7 +276,7 @@ bool response_promise_catch_handler(JSContext *cx, JS::HandleObject event,
   JS::RootedObject promise(cx, &promise_val.toObject());
 
   fprintf(stderr, "Error while running request handler: ");
-  ENGINE->dump_promise_rejection(args.get(0), promise, stderr);
+  api::Engine::get(cx)->dump_promise_rejection(args.get(0), promise, stderr);
 
   // TODO: verify that this is the right behavior.
   // Steps 9.1-2
@@ -307,7 +313,7 @@ bool FetchEvent::respondWith(JSContext *cx, unsigned argc, JS::Value *vp) {
   add_pending_promise(cx, self, response_promise, false);
 
   // Steps 5-7 (very roughly)
-  set_state(self, State::waitToRespond);
+  set_state(cx, self, State::waitToRespond);
 
   // Step 9 (continued in `response_promise_catch_handler` above)
   JS::RootedObject catch_handler(cx);
@@ -332,7 +338,8 @@ bool FetchEvent::respondWith(JSContext *cx, unsigned argc, JS::Value *vp) {
   return true;
 }
 
-  bool FetchEvent::respondWithError(JSContext *cx, JS::HandleObject self, std::optional<std::string_view> body_text) {
+bool FetchEvent::respondWithError(JSContext *cx, JS::HandleObject self,
+                                  std::optional<std::string_view> body_text) {
   MOZ_RELEASE_ASSERT(state(self) == State::unhandled || state(self) == State::waitToRespond);
 
   auto headers = std::make_unique<host_api::HttpHeaders>();
@@ -354,10 +361,10 @@ bool FetchEvent::respondWith(JSContext *cx, unsigned argc, JS::Value *vp) {
 
   if (body_text) {
     auto *body = body_res.unwrap();
-    body->write(reinterpret_cast<const uint8_t*>(body_text->data()), body_text->length());
+    body->write(reinterpret_cast<const uint8_t *>(body_text->data()), body_text->length());
   }
 
-  return send_response(response, self, FetchEvent::State::respondedWithError);
+  return send_response(cx, response, self, FetchEvent::State::respondedWithError);
 }
 
 // Steps in this function refer to the spec at
@@ -385,9 +392,13 @@ bool FetchEvent::waitUntil(JSContext *cx, unsigned argc, JS::Value *vp) {
   return true;
 }
 
-void FetchEvent::increase_interest() { inc_pending_promise_count(INSTANCE); }
+void FetchEvent::increase_interest(JSContext *cx) {
+  inc_pending_promise_count(cx, INSTANCE.rooted(cx));
+}
 
-void FetchEvent::decrease_interest() { dec_pending_promise_count(INSTANCE); }
+void FetchEvent::decrease_interest(JSContext *cx) {
+  dec_pending_promise_count(cx, INSTANCE.rooted(cx));
+}
 
 const JSFunctionSpec FetchEvent::static_methods[] = {
     JS_FS_END,
@@ -409,12 +420,12 @@ const JSPropertySpec FetchEvent::properties[] = {
 };
 
 JSObject *FetchEvent::create(JSContext *cx) {
-  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj));
+  JS::RootedObject self(cx, JS_NewObjectWithGivenProto(cx, &class_, proto_obj(cx)));
   if (!self) {
     return nullptr;
   }
 
-  JS::RootedValue type(cx, JS::StringValue(fetch_type_atom));
+  JS::RootedValue type(cx, JS::StringValue(fetch_type_atom.rooted(cx)));
   JS::RootedValue init(cx);
   if (!Event::init(cx, self, type, init)) {
     return nullptr;
@@ -425,7 +436,8 @@ JSObject *FetchEvent::create(JSContext *cx) {
     return nullptr;
   }
 
-  JS::RootedObject dec_count_handler(cx, create_internal_method<dec_pending_promise_count>(cx, self));
+  JS::RootedObject dec_count_handler(cx,
+                                     create_internal_method<dec_pending_promise_count>(cx, self));
   if (!dec_count_handler) {
     return nullptr;
   }
@@ -436,14 +448,14 @@ JSObject *FetchEvent::create(JSContext *cx) {
   JS::SetReservedSlot(self, Slots::DecPendingPromiseCountFunc, JS::ObjectValue(*dec_count_handler));
 
   INSTANCE.init(cx, self);
-  self = INSTANCE;
+  self = INSTANCE.rooted(cx);
   return self;
 }
 
-JS::HandleObject FetchEvent::instance() {
-  MOZ_ASSERT(INSTANCE);
-  MOZ_ASSERT(is_instance(INSTANCE));
-  return INSTANCE;
+JS::HandleObject FetchEvent::instance(JSContext *cx) {
+  MOZ_ASSERT(INSTANCE.rooted(cx));
+  MOZ_ASSERT(is_instance(INSTANCE.rooted(cx)));
+  return INSTANCE.rooted(cx);
 }
 
 bool FetchEvent::is_active(JSObject *self) {
@@ -461,18 +473,18 @@ FetchEvent::State FetchEvent::state(JSObject *self) {
   return static_cast<FetchEvent::State>(JS::GetReservedSlot(self, Slots::CurrentState).toInt32());
 }
 
-void FetchEvent::set_state(JSObject *self, FetchEvent::State new_state) {
+void FetchEvent::set_state(JSContext *cx, JSObject *self, FetchEvent::State new_state) {
   MOZ_ASSERT(is_instance(self));
   auto current_state = state(self);
   MOZ_ASSERT((uint8_t)new_state > (uint8_t)current_state);
   JS::SetReservedSlot(self, Slots::CurrentState, JS::Int32Value(static_cast<int32_t>(new_state)));
 
   if (current_state == State::responseStreaming &&
-    (new_state == State::responseDone || new_state == State::respondedWithError)) {
-    if (STREAMING_BODY && STREAMING_BODY->valid()) {
-      STREAMING_BODY->close();
+      (new_state == State::responseDone || new_state == State::respondedWithError)) {
+    if (streaming_body(cx) && streaming_body(cx)->valid()) {
+      streaming_body(cx)->close();
     }
-    decrease_interest();
+    decrease_interest(cx);
   }
 }
 
@@ -481,47 +493,50 @@ bool FetchEvent::response_started(JSObject *self) {
   return current_state != State::unhandled && current_state != State::waitToRespond;
 }
 
-static void dispatch_fetch_event(HandleObject event, double *total_compute) {
+static void dispatch_fetch_event(api::Engine *engine, HandleObject event, double *total_compute) {
   MOZ_ASSERT(FetchEvent::is_instance(event));
+  JSContext *cx = engine->cx();
 
-  RootedValue event_val(ENGINE->cx(), JS::ObjectValue(*event));
-  RootedValue rval(ENGINE->cx());
-  RootedObject event_target(ENGINE->cx(), global_event_target());
+  RootedValue event_val(cx, JS::ObjectValue(*event));
+  RootedValue rval(cx);
+  RootedObject event_target(cx, global_event_target(cx));
   MOZ_RELEASE_ASSERT(event_target);
 
-  EventTarget::dispatch_event(ENGINE->cx(), event_target, event_val, &rval);
+  EventTarget::dispatch_event(cx, event_target, event_val, &rval);
 }
 
-bool handle_incoming_request(host_api::HttpIncomingRequest *request) {
+bool handle_incoming_request(void *data, host_api::HttpIncomingRequest *request) {
 #ifdef DEBUG
   fprintf(stderr, "Warning: Using a DEBUG build. Expect things to be SLOW.\n");
 #endif
-  MOZ_ASSERT(ENGINE->state() == api::EngineState::Initialized);
+  auto *engine = static_cast<api::Engine *>(data);
+  JSContext *cx = engine->cx();
+  MOZ_ASSERT(engine->state() == api::EngineState::Initialized);
 
-  HandleObject fetch_event = FetchEvent::instance();
+  HandleObject fetch_event = FetchEvent::instance(cx);
   MOZ_ASSERT(FetchEvent::is_instance(fetch_event));
 
-  if (!FetchEvent::init_incoming_request(ENGINE->cx(), fetch_event, request)) {
-    ENGINE->dump_pending_exception("initialization of FetchEvent");
+  if (!FetchEvent::init_incoming_request(cx, fetch_event, request)) {
+    engine->dump_pending_exception("initialization of FetchEvent");
     return false;
   }
 
   double total_compute = 0;
 
-  content_debugger::maybe_init_debugger(ENGINE, true);
-  dispatch_fetch_event(fetch_event, &total_compute);
+  content_debugger::maybe_init_debugger(engine, true);
+  dispatch_fetch_event(engine, fetch_event, &total_compute);
 
-  bool success = ENGINE->run_event_loop();
+  bool success = engine->run_event_loop();
 
-  if (JS_IsExceptionPending(ENGINE->cx())) {
-    ENGINE->dump_pending_exception("evaluating incoming request");
+  if (JS_IsExceptionPending(cx)) {
+    engine->dump_pending_exception("evaluating incoming request");
   }
 
   if (!success) {
     fprintf(stderr, "Warning: JS event loop terminated without completing the request.\n");
   }
 
-  if (ENGINE->debug_logging_enabled() && ENGINE->has_pending_async_tasks()) {
+  if (engine->debug_logging_enabled() && engine->has_pending_async_tasks()) {
     fprintf(stderr, "Event loop terminated with async tasks pending. "
                     "Use FetchEvent#waitUntil to extend the component's "
                     "lifetime if needed.\n");
@@ -530,17 +545,18 @@ bool handle_incoming_request(host_api::HttpIncomingRequest *request) {
   if (!FetchEvent::response_started(fetch_event)) {
     // If at this point no fetch event handler has run, we can
     // send a specific error indicating that there is likely no handler registered
-    FetchEvent::respondWithError(ENGINE->cx(), fetch_event, DEFAULT_NO_HANDLER_ERROR_MSG);
+    FetchEvent::respondWithError(cx, fetch_event, DEFAULT_NO_HANDLER_ERROR_MSG);
     return true;
   }
 
-  if (STREAMING_BODY && STREAMING_BODY->valid()) {
-    STREAMING_BODY->close();
+  if (streaming_body(cx) && streaming_body(cx)->valid()) {
+    streaming_body(cx)->close();
   }
 
-  if (ENGINE->has_unhandled_promise_rejections()) {
-    fprintf(stderr, "Warning: Unhandled promise rejections detected after handling incoming request.\n");
-    ENGINE->report_unhandled_promise_rejections();
+  if (engine->has_unhandled_promise_rejections()) {
+    fprintf(stderr,
+            "Warning: Unhandled promise rejections detected after handling incoming request.\n");
+    engine->report_unhandled_promise_rejections();
   }
 
   return true;
@@ -548,15 +564,16 @@ bool handle_incoming_request(host_api::HttpIncomingRequest *request) {
 
 bool FetchEvent::init_class(JSContext *cx, JS::HandleObject global) {
   Event::register_subclass(&class_);
-  return init_class_impl(cx, global, Event::proto_obj) && JS_DeleteProperty(cx, global, class_.name);
+  return init_class_impl(cx, global, Event::proto_obj(cx)) &&
+         JS_DeleteProperty(cx, global, class_.name);
 }
 
 bool install(api::Engine *engine) {
-  ENGINE = engine;
-
-  if (!(fetch_type_atom = JS_AtomizeAndPinString(engine->cx(), "fetch"))) {
+  JSString *fetch = JS_AtomizeAndPinString(engine->cx(), "fetch");
+  if (!fetch) {
     return false;
   }
+  fetch_type_atom.init(engine->cx(), fetch);
 
   if (!FetchEvent::init_class(engine->cx(), engine->global())) {
     return false;
@@ -585,7 +602,7 @@ bool install(api::Engine *engine) {
   //   }
   // }
 
-  host_api::HttpIncomingRequest::set_handler(handle_incoming_request);
+  host_api::HttpIncomingRequest::set_handler(handle_incoming_request, engine);
   return true;
 }
 
